@@ -5,121 +5,134 @@ from data.market_data import fetch_ohlcv
 from indicators.basic import add_indicators
 from strategies.strategy_library import STRATEGIES
 from backtesting.analytics import analyze, split_validation
+from backtesting.quality import quality_score, beginner_verdict
 
 st.set_page_config(page_title="Project Real Big Money",page_icon="💰",layout="wide")
 st.title("💰 Project Real Big Money")
-st.caption("v0.4｜加密貨幣策略研究工具｜目前僅供研究與模擬，不會自動下單")
+st.caption("v0.5｜新手友善回測＋策略品質中心｜研究用途，不會自動下單")
 
-STRATEGY_ZH={
-    "SMA Cross":"均線交叉策略",
-    "RSI Reversion":"RSI 超賣反彈策略",
-    "Trend + RSI":"趨勢＋RSI 策略",
-}
-STRATEGY_HELP={
-    "SMA Cross":"短期均線高於長期均線時偏多，反之偏空。",
-    "RSI Reversion":"RSI 低於 30 時視為超賣，測試反彈機會。",
-    "Trend + RSI":"同時參考均線方向與 RSI 強弱，條件較嚴格。",
-}
+ZH={"SMA Cross":"均線交叉策略","RSI Reversion":"RSI 超賣反彈策略","Trend + RSI":"趨勢＋RSI 策略"}
+HELP={
+"SMA Cross":"比較短期與長期平均價格，觀察市場趨勢方向。",
+"RSI Reversion":"尋找價格可能過度下跌後的反彈機會。",
+"Trend + RSI":"同時看趨勢與市場強弱，條件比單一指標嚴格。"}
 
 with st.sidebar:
-    st.header("⚙️ 回測設定")
-    symbol=st.selectbox("選擇幣種",["BTC/USDT","ETH/USDT","SOL/USDT"],help="目前先提供 BTC、ETH、SOL。")
-    timeframe=st.selectbox("K 線週期",["15m","1h","4h","1d"],index=1,help="1h = 每根 K 線代表 1 小時。")
-    strategy_name=st.selectbox("選擇策略",list(STRATEGIES),format_func=lambda x: STRATEGY_ZH[x])
-    st.caption("📘 "+STRATEGY_HELP[strategy_name])
-    limit=st.slider("分析 K 線數量",200,1000,500,100,help="數量越多，涵蓋的歷史時間越長。")
-    fee=st.number_input("單次交易成本",0.0,0.01,float(FEE_RATE),0.0001,format="%.4f",help="0.001 = 0.1%。回測會把交易成本算進去。")
-    validate=st.checkbox("啟用 70/30 樣本外驗證",value=True,help="前 70% 資料用來觀察策略，後 30% 用來檢查策略是否仍有效。")
-    run=st.button("▶ 開始分析",type="primary",use_container_width=True)
+    st.header("⚙️ 設定")
+    mode=st.radio("顯示模式",["🌱 新手模式","🔬 專業模式"],help="新手模式先說人話；專業模式顯示更多統計資料。")
+    symbol=st.selectbox("我要研究哪個幣？",["BTC/USDT","ETH/USDT","SOL/USDT"])
+    timeframe=st.selectbox("多久看一次價格？",["15m","1h","4h","1d"],index=1,help="例如 1h 表示每一根 K 線代表一小時。新手建議先用 1h。")
+    strategy=st.selectbox("使用哪個策略？",list(STRATEGIES),format_func=lambda x:ZH[x])
+    st.caption("💡 "+HELP[strategy])
+    limit=st.slider("要看多少根歷史 K 線？",200,1000,500,100,help="越多通常越有參考價值，但 1000 根仍不代表足夠涵蓋完整牛熊週期。")
+    fee=st.number_input("交易成本",0.0,0.01,float(FEE_RATE),0.0001,format="%.4f",help="0.001 = 0.1%。不要把交易成本設成 0，否則容易高估策略。")
+    run=st.button("▶ 開始回測",type="primary",use_container_width=True)
 
-with st.expander("📖 第一次使用？先看這裡",expanded=False):
+with st.expander("🎓 我完全不懂回測，從這裡開始",expanded=False):
     st.markdown("""
-**你不需要先懂所有量化名詞。**
+**回測是什麼？** 把一套交易規則放進過去的市場資料，看它以前會發生什麼。
 
-1. 選幣種，例如 BTC。
-2. K 線週期先用 **1h**。
-3. 選一個策略。
-4. 其他設定先維持預設值。
-5. 按 **開始分析**。
-6. 先看「策略健檢」，再看詳細數字。
+**它不能證明未來會賺錢。** 回測的用途是淘汰明顯不好的策略，並檢查策略是否值得繼續研究。
 
-**重要：** 回測賺錢不代表未來一定賺錢。本工具目前不會送出真實交易訂單。
+第一次使用建議：BTC/USDT → 1h → 保持其他預設值 → 開始回測。
 """)
 
 if not run:
-    st.info("👈 第一次使用可先保持預設值，直接按左側「開始分析」。")
-    st.subheader("你會看到什麼？")
-    a,b,c=st.columns(3)
-    a.markdown("### ① 有沒有賺？\n比較策略報酬與單純持有。")
-    b.markdown("### ② 風險多大？\n看最大回撤與風險調整後績效。")
-    c.markdown("### ③ 是否可靠？\n用後 30% 資料再次驗證。")
+    st.info("👈 第一次使用？保持預設值直接按「開始回測」即可。")
+    st.markdown("### 系統會替你回答四個問題")
+    a,b,c,d=st.columns(4)
+    a.info("💰 **以前有賺嗎？**\n\n先看歷史結果。")
+    b.info("🛡️ **中間多痛？**\n\n看最大資金下跌。")
+    c.info("🧪 **可信嗎？**\n\n檢查資料與樣本外結果。")
+    d.info("🚦 **下一步？**\n\n告訴你該繼續研究還是淘汰。")
     st.stop()
 
-with st.spinner("正在取得市場資料並進行分析…"):
+with st.spinner("正在取得資料並進行回測…"):
     raw=fetch_ohlcv(EXCHANGE,symbol,timeframe,limit)
     base=add_indicators(raw)
-    df=STRATEGIES[strategy_name](base)
-    results,metrics=analyze(df,fee,timeframe)
+    signals=STRATEGIES[strategy](base)
+    results,metrics=analyze(signals,fee,timeframe)
+    _,train_m,test,test_m=split_validation(signals,fee,timeframe)
+    quality=quality_score(metrics,train_m,test_m,len(results))
+    verdict=beginner_verdict(metrics,quality)
 
-st.success(f"分析完成：{symbol}｜{STRATEGY_ZH[strategy_name]}｜{timeframe}")
+st.success(f"分析完成｜{symbol}｜{ZH[strategy]}｜{timeframe}")
 
-ret=metrics["total_return"]; bh=metrics["buy_hold"]; dd=metrics["max_drawdown"]
-sh=metrics["sharpe"]; pf=metrics["profit_factor"]
+if mode=="🌱 新手模式":
+    st.header("📋 先看結論")
+    st.markdown(f"## {quality['icon']} 回測品質：{quality['score']} / 100｜{quality['level']}")
+    st.progress(quality["score"]/100)
+    st.caption("這個分數不是『賺錢機率』，而是目前回測證據的完整程度與可信度提示。")
 
-st.subheader("🩺 策略健檢")
-if ret>0 and ret>bh and sh>1:
-    st.success("🟢 初步表現不錯：這段歷史資料中策略為正報酬、優於單純持有，而且 Sharpe > 1。仍需查看樣本外驗證。")
-elif ret>0:
-    st.warning("🟡 有正報酬，但不代表策略具有穩定優勢。請比較 Buy & Hold、回撤與樣本外結果。")
+    a,b=st.columns(2)
+    with a:
+        st.subheader("💰 過去有賺錢嗎？")
+        st.metric("策略歷史報酬",f"{metrics['total_return']:.2%}")
+        diff=metrics["total_return"]-metrics["buy_hold"]
+        if metrics["total_return"]>0:
+            st.success("這段歷史資料中，策略最後是正報酬。")
+        else:
+            st.error("這段歷史資料中，策略最後是虧損。")
+        st.write(f"與單純持有相比，相差 **{diff:+.2%}**。這不是未來報酬預測。")
+    with b:
+        st.subheader("🛡️ 中間可能有多痛？")
+        dd=abs(metrics["max_drawdown"])
+        st.metric("歷史最大回撤",f"-{dd:.2%}")
+        st.write(f"如果用 **10 萬元**理解，歷史上從策略資金高點出發，曾出現約 **{100000*dd:,.0f} 元**的回落幅度。")
+        st.caption("這只是把百分比換成容易理解的金額；未來損失可能更大。")
+
+    st.subheader("🧪 為什麼系統給這個品質分數？")
+    for name,score in quality["parts"].items():
+        maxv={"資料量":20,"交易樣本":15,"風險控制":15,"風險調整績效":15,"獲利品質":15,"樣本外驗證":20}[name]
+        icon="🟢" if score/maxv>=.7 else "🟡" if score/maxv>=.4 else "🔴"
+        st.write(f"{icon} **{name}：{score:.0f}/{maxv}**")
+    with st.expander("❓ 這些項目到底是什麼？"):
+        st.markdown("""
+- **資料量**：歷史資料太短，可能只是碰巧遇到適合策略的行情。
+- **交易樣本**：只有幾筆交易就說策略有效，可信度很低。
+- **風險控制**：觀察策略歷史上曾經跌得多深。
+- **風險調整績效**：不是只看賺多少，也看為了賺這些錢承受多少波動。
+- **獲利品質**：檢查正報酬是否足以覆蓋負報酬。
+- **樣本外驗證**：把後段資料當成策略「沒看過的考題」，降低只背歷史答案的風險。
+""")
+    st.subheader("🚦 那我現在應該做什麼？")
+    if quality["score"]>=80 and metrics["total_return"]>0:
+        st.success(verdict["action"])
+    elif quality["score"]>=60:
+        st.warning(verdict["action"])
+    else:
+        st.error(verdict["action"])
+    st.info("⚠️ 『值得繼續研究』不等於『現在應該買』。v0.5 不提供真實下單。")
+
+    with st.expander("📈 我想看看圖表"):
+        st.write("**策略 vs 單純持有**：兩條線都從 1 開始，最後較高代表這段期間累積表現較好。")
+        st.line_chart(results.set_index("timestamp")[["strategy_equity","buy_hold_equity"]])
+        st.write("**價格與均線**：用來觀察策略所看到的趨勢。")
+        st.line_chart(base.set_index("timestamp")[["close","sma_20","sma_50"]])
 else:
-    st.error("🔴 這段歷史資料中策略為負報酬。目前不適合因為這次回測就拿去實盤。")
-
-c1,c2,c3,c4=st.columns(4)
-c1.metric("策略報酬",f"{ret:.2%}",help="依目前策略與交易成本計算的歷史報酬。")
-c2.metric("單純持有報酬",f"{bh:.2%}",help="同一期間買入後不交易的報酬。")
-c3.metric("最大回撤",f"{dd:.2%}",help="歷史上從高點到低點最大的跌幅。越接近 0 通常越好。")
-c4.metric("Sharpe 夏普比率",f"{sh:.2f}",help="衡量承擔波動後取得的報酬。通常越高越好，但不能單獨判斷策略。")
-
-with st.expander("🔬 查看進階指標"):
-    a,b,c,d=st.columns(4)
-    a.metric("Sortino 索提諾比率",f"{metrics['sortino']:.2f}",help="類似 Sharpe，但更聚焦下跌波動。")
-    b.metric("勝率",f"{metrics['win_rate']:.1%}",help="目前計算方式為持倉期間正報酬 K 線的比例，不等同完整逐筆交易勝率。")
-    pf_text="∞" if math.isinf(pf) else f"{pf:.2f}"
-    c.metric("Profit Factor 獲利因子",pf_text,help="總正報酬 ÷ 總負報酬。大於 1 代表這段資料中正報酬總量較高。")
-    d.metric("部位變動次數",metrics["position_changes"],help="策略部位改變的次數，不一定等同完整交易筆數。")
-
-st.subheader("📈 策略 vs 單純持有")
-st.caption("起點都設為 1。線越高代表累積績效越高。")
-st.line_chart(results.set_index("timestamp")[["strategy_equity","buy_hold_equity"]])
-
-st.subheader("💹 價格與均線")
-st.caption("Close = 收盤價；SMA20 = 20 期均線；SMA50 = 50 期均線。")
-st.line_chart(base.set_index("timestamp")[["close","sma_20","sma_50"]])
-
-st.subheader("🌡️ RSI 相對強弱指標")
-st.caption("一般常把 RSI < 30 視為偏超賣、RSI > 70 視為偏超買，但不能單獨作為買賣依據。")
-st.line_chart(base.set_index("timestamp")[["rsi_14"]])
-
-if validate:
-    _,train_m,test,test_m=split_validation(df,fee,timeframe)
-    st.subheader("🧪 70/30 樣本外驗證")
-    st.caption("前 70% 與後 30% 分開看。後 30% 可用來檢查策略是否只是在前段資料看起來有效。")
+    st.header("🔬 專業研究面板")
+    c=st.columns(7)
+    vals=[("策略報酬",metrics["total_return"],".2%"),("Buy & Hold",metrics["buy_hold"],".2%"),
+          ("最大回撤",metrics["max_drawdown"],".2%"),("Sharpe",metrics["sharpe"],".2f"),
+          ("Sortino",metrics["sortino"],".2f"),("勝率*",metrics["win_rate"],".1%"),
+          ("Profit Factor",metrics["profit_factor"],".2f")]
+    for col,(n,v,f) in zip(c,vals):
+        col.metric(n, "∞" if n=="Profit Factor" and math.isinf(v) else format(v,f))
+    st.caption("*目前勝率仍是持倉期間正報酬 K 線比例，尚不是完整逐筆交易勝率；後續 Trade Engine 將修正。")
+    st.subheader("70/30 樣本外驗證")
     a,b,c,d=st.columns(4)
     a.metric("前 70% 報酬",f"{train_m['total_return']:.2%}")
     b.metric("後 30% 報酬",f"{test_m['total_return']:.2%}")
     c.metric("後 30% Sharpe",f"{test_m['sharpe']:.2f}")
     d.metric("後 30% 最大回撤",f"{test_m['max_drawdown']:.2%}")
-    if train_m["total_return"]>0 and test_m["total_return"]<0:
-        st.error("⚠️ 過度擬合警訊：前段賺錢，但後段資料轉為虧損。不要只看漂亮的歷史績效。")
-    elif test_m["total_return"]>0 and test_m["sharpe"]>0:
-        st.success("✅ 後段資料仍為正報酬，但仍需要更長歷史、不同市場週期與更多穩健性測試。")
-    else:
-        st.warning("⚠️ 樣本外結果沒有顯示明顯優勢，建議調整或淘汰此策略。")
-
-with st.expander("📋 查看原始回測明細"):
-    show=results[["timestamp","close","signal","position","market_return","strategy_return","strategy_equity"]].tail(200)
-    show=show.rename(columns={"timestamp":"時間","close":"收盤價","signal":"策略訊號","position":"持倉方向","market_return":"市場報酬","strategy_return":"策略報酬","strategy_equity":"策略淨值"})
-    st.dataframe(show,use_container_width=True)
+    st.subheader("策略 vs Buy & Hold")
+    st.line_chart(results.set_index("timestamp")[["strategy_equity","buy_hold_equity"]])
+    st.subheader("價格 / SMA20 / SMA50")
+    st.line_chart(base.set_index("timestamp")[["close","sma_20","sma_50"]])
+    st.subheader("RSI 14")
+    st.line_chart(base.set_index("timestamp")[["rsi_14"]])
+    with st.expander("原始回測明細"):
+        st.dataframe(results.tail(200),use_container_width=True)
 
 st.divider()
-st.caption("⚠️ 本工具為研究用途，不構成投資建議。v0.4 沒有真實下單功能。")
+st.caption("Project Real Big Money v0.5｜回測只能描述歷史情境，不保證未來結果。本工具目前沒有真實下單功能。")
