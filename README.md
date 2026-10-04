@@ -1,22 +1,27 @@
 # Project Real Big Money
 
-Crypto research, backtesting and paper-trading project.
+加密貨幣策略研究與回測工具。
 
-## v0.3 — Strategy Research & Validation
+## v0.4 — 繁體中文易讀介面
 
-Current capabilities:
+v0.4 將重點放在「讓非量化背景使用者也能理解結果」。
+
+### 功能
+- 繁體中文 Dashboard
 - BTC / ETH / SOL
 - 15m / 1h / 4h / 1d
-- SMA20, SMA50 and RSI14
-- SMA Cross, RSI Reversion, Trend + RSI strategies
-- Trading-fee-aware backtesting
-- Strategy vs Buy & Hold
-- Return, maximum drawdown, Sharpe, Sortino, win rate and Profit Factor
-- 70/30 in-sample / out-of-sample validation
-- Detailed position and return table
-- No live order execution
+- 均線交叉、RSI 超賣反彈、趨勢＋RSI
+- 策略報酬 vs 單純持有
+- 最大回撤
+- Sharpe 夏普比率
+- Sortino 索提諾比率
+- 勝率與 Profit Factor 獲利因子
+- 70/30 樣本外驗證
+- 白話策略健檢與風險提示
+- 進階數據可收合
+- 無真實下單功能
 
-## Windows
+## Windows 啟動
 
 ```bat
 python -m venv .venv
@@ -25,10 +30,7 @@ python -m pip install -r requirements.txt
 streamlit run app.py
 ```
 
-Then open `http://localhost:8501`.
+瀏覽器開啟 `http://localhost:8501`。
 
-## Important
-This is research software, not investment advice. A profitable backtest does not imply future profitability. Never commit API keys or secrets.
-
-## Next
-v0.4: deeper market data (funding rate, open interest, long/short context), longer historical data and stronger strategy robustness testing.
+## 注意
+本專案僅供研究，不構成投資建議。歷史回測獲利不代表未來獲利。請勿將 API Key 或 Secret 提交至 GitHub。
