@@ -1,139 +1,98 @@
 import math
 import streamlit as st
 from config.settings import EXCHANGE, FEE_RATE
-from data.market_data import fetch_ohlcv
+from data.history import fetch_history
 from indicators.basic import add_indicators
 from strategies.strategy_library import STRATEGIES
-from backtesting.analytics import analyze, split_validation
-from backtesting.quality import quality_score, beginner_verdict
+from backtesting.analytics import analyze
 from backtesting.trade_engine import build_trades, trade_statistics
+from backtesting.validation import regime_report, walk_forward, cost_stress, validation_score
 
 st.set_page_config(page_title="Project Real Big Money",page_icon="💰",layout="wide")
 st.title("💰 Project Real Big Money")
-st.caption("v0.6｜新手友善策略研究＋真正逐筆交易分析｜研究用途，不會自動下單")
+st.caption("v0.7｜Strategy Validation Engine｜目標不是找最好看的回測，而是找最難被證明是假的策略")
 
 ZH={"SMA Cross":"均線交叉策略","RSI Reversion":"RSI 超賣反彈策略","Trend + RSI":"趨勢＋RSI 策略"}
-HELP={"SMA Cross":"比較短期與長期平均價格，觀察趨勢方向。",
-"RSI Reversion":"尋找價格可能過度下跌後的反彈機會。",
-"Trend + RSI":"同時參考趨勢與市場強弱，條件較嚴格。"}
-
 with st.sidebar:
-    st.header("⚙️ 回測設定")
-    mode=st.radio("顯示模式",["🌱 新手模式","🔬 專業模式"])
-    symbol=st.selectbox("我要研究哪個幣？",["BTC/USDT","ETH/USDT","SOL/USDT"])
-    timeframe=st.selectbox("多久看一次價格？",["15m","1h","4h","1d"],index=1,help="1h = 每根 K 線代表一小時。")
-    strategy=st.selectbox("使用哪個策略？",list(STRATEGIES),format_func=lambda x:ZH[x])
-    st.caption("💡 "+HELP[strategy])
-    limit=st.slider("歷史 K 線數量",200,1000,500,100)
-    fee=st.number_input("單邊手續費率",0.0,0.01,float(FEE_RATE),0.0001,format="%.4f",help="例如 0.001 = 0.1%。")
-    slippage=st.number_input("單邊滑價假設",0.0,0.01,0.0005,0.0001,format="%.4f",help="滑價是理論價格與實際成交價格的落差。0.0005 = 0.05%。")
-    run=st.button("▶ 開始回測",type="primary",use_container_width=True)
+    st.header("⚙️ 驗證設定")
+    mode=st.radio("介面",["🌱 新手模式","🔬 專業模式"])
+    symbol=st.selectbox("幣種",["BTC/USDT","ETH/USDT","SOL/USDT"])
+    timeframe=st.selectbox("K線週期",["1h","4h","1d"],index=0)
+    years=st.select_slider("歷史資料",options=[1,2,3,5],value=3,format_func=lambda x:f"{x} 年")
+    strategy=st.selectbox("策略",list(STRATEGIES),format_func=lambda x:ZH[x])
+    fee=st.number_input("單邊手續費",0.0,0.01,float(FEE_RATE),0.0001,format="%.4f")
+    slip=st.number_input("單邊滑價",0.0,0.01,0.0005,0.0001,format="%.4f")
+    run=st.button("🧪 開始策略驗證",type="primary",use_container_width=True)
 
-with st.expander("🎓 新手：這一版多了什麼？"):
-    st.markdown("""
-v0.6 開始把 **進場 → 持有 → 出場** 視為一筆完整交易。
+with st.expander("🎓 新手：v0.7 在檢查什麼？"):
+    st.markdown("""不是只問「以前賺多少」，而是故意讓策略接受更難的考試：
 
-所以「勝率」現在真的代表：**100 筆完整交易裡，有多少筆最後賺錢。**
+**長時間資料** → **完整交易樣本** → **牛熊盤整** → **Walk-Forward 未知資料** → **成本/滑價惡化測試**。
 
-同時加入滑價、平均賺賠、每筆期望值、最大連敗、MAE/MFE 等資料。
-這仍然是歷史模擬，不代表未來結果。
-""")
+PASS 也不是「可以直接買」，只是代表這套策略值得進下一階段研究。""")
 
 if not run:
-    st.info("👈 第一次使用可以保持預設值，直接按「開始回測」。")
-    st.markdown("### v0.6 會回答")
-    a,b,c,d=st.columns(4)
-    a.info("💰 **策略賺嗎？**\n\n看整體歷史績效。")
-    b.info("🎯 **每筆交易如何？**\n\n真正逐筆統計。")
-    c.info("🛡️ **風險多大？**\n\n回撤、連敗與 MAE。")
-    d.info("🧪 **值得信嗎？**\n\n品質與樣本外驗證。")
+    st.info("👈 選好條件後按「開始策略驗證」。第一次建議 BTC / 1h / 3年。下載多年資料第一次可能需要一些時間。")
     st.stop()
 
-with st.spinner("正在取得資料並建立逐筆交易紀錄…"):
-    raw=fetch_ohlcv(EXCHANGE,symbol,timeframe,limit)
+with st.spinner("正在下載多年歷史資料並進行多層驗證，第一次可能較久…"):
+    raw=fetch_history(EXCHANGE,symbol,timeframe,years)
     base=add_indicators(raw)
-    signals=STRATEGIES[strategy](base)
-    results,metrics=analyze(signals,fee,timeframe)
-    _,train_m,test,test_m=split_validation(signals,fee,timeframe)
-    quality=quality_score(metrics,train_m,test_m,len(results))
-    verdict=beginner_verdict(metrics,quality)
-    trades=build_trades(signals,fee,slippage)
-    ts=trade_statistics(trades)
+    sig=STRATEGIES[strategy](base)
+    equity,m=analyze(sig,fee,timeframe)
+    trades=build_trades(sig,fee,slip); ts=trade_statistics(trades)
+    regimes=regime_report(sig,fee,timeframe)
+    wf=walk_forward(sig,fee,timeframe,5)
+    stress=cost_stress(sig,fee,timeframe,slip)
+    score,status,reasons=validation_score(years,ts,wf,regimes,stress)
 
-st.success(f"分析完成｜{symbol}｜{ZH[strategy]}｜{timeframe}")
+icon={"PASS":"🟢","WATCH":"🟡","FAIL":"🔴"}[status]
+st.success(f"完成｜{symbol}｜{ZH[strategy]}｜{years}年｜{len(raw):,} 根 K 線")
 
 if mode=="🌱 新手模式":
-    st.header("📋 先看結論")
-    st.markdown(f"## {quality['icon']} 回測品質：{quality['score']} / 100｜{quality['level']}")
-    st.progress(quality["score"]/100)
-    st.caption("品質分數不是賺錢機率，而是提醒你目前證據有多完整。")
-
-    a,b,c=st.columns(3)
-    a.metric("策略歷史報酬",f"{metrics['total_return']:.2%}")
-    b.metric("真正逐筆勝率",f"{ts['win_rate']:.1%}",help="完整進場到出場後，最後淨報酬為正的交易比例。")
-    c.metric("完整交易筆數",ts["trades"],help="樣本太少時，即使勝率很漂亮也不能太相信。")
-
-    st.subheader("🎯 這套策略每次出手的品質如何？")
-    x,y,z=st.columns(3)
-    x.metric("平均賺一筆",f"{ts['avg_win']:.2%}")
-    y.metric("平均賠一筆",f"{ts['avg_loss']:.2%}")
-    z.metric("每筆期望值",f"{ts['expectancy']:.2%}",help="把所有完整交易平均後，一筆交易歷史上平均帶來多少淨報酬。")
-    if ts["expectancy"]>0:
-        st.success("🟢 歷史上每筆交易的平均結果為正。但仍要確認交易筆數是否足夠。")
-    else:
-        st.error("🔴 歷史上每筆交易的平均結果不是正值，目前沒有看到明顯交易優勢。")
-
-    st.subheader("🛡️ 如果運氣不好，可能遇到什麼？")
-    a,b,c=st.columns(3)
-    a.metric("最大連續虧損",f"{ts['max_consecutive_losses']} 筆",help="歷史上最長連續虧損交易數。")
-    b.metric("平均 MAE",f"{ts['avg_mae']:.2%}",help="一筆交易持有期間，平均曾經朝不利方向走多遠。")
-    c.metric("平均 MFE",f"{ts['avg_mfe']:.2%}",help="一筆交易持有期間，平均曾經朝有利方向走多遠。")
-    with st.expander("❓ MAE / MFE 是什麼？"):
-        st.markdown("""
-**MAE（最大不利偏移）**：進場之後，在離場以前，價格曾經對你最不利多少。
-
-**MFE（最大有利偏移）**：進場之後，在離場以前，價格曾經對你最有利多少。
-
-未來可以利用大量 MAE/MFE 分布研究停損與停利，但不能只挑一個歷史上最好看的數字。
-""")
-
-    st.subheader("💸 系統有沒有假裝成交很完美？")
-    st.write(f"目前逐筆交易計算已加入：單邊手續費 **{fee:.2%}** ＋ 單邊滑價 **{slippage:.2%}**。")
-    st.caption("滑價仍是固定假設；真實市場會隨流動性、訂單大小與波動改變。")
-
-    st.subheader("🚦 下一步")
-    if ts["trades"] < 30:
-        st.warning("交易樣本仍偏少。即使目前數字漂亮，也建議增加歷史資料後再判斷。")
-    elif quality["score"]>=80 and ts["expectancy"]>0:
-        st.success("目前值得進一步做更長歷史與 Paper Trading 驗證，但不是實盤買入訊號。")
-    else:
-        st.warning(verdict["action"])
-
-    with st.expander("📋 看每一筆交易"):
-        if trades.empty: st.info("目前資料沒有形成完整交易。")
-        else:
-            show=trades.copy()
-            for col in ["毛報酬","交易成本","淨報酬","MAE","MFE"]:
-                show[col]=show[col].map(lambda x:f"{x:.2%}")
-            st.dataframe(show,use_container_width=True)
+    st.header(f"{icon} 策略驗證：{score}/100｜{status}")
+    st.progress(score/100)
+    st.caption("這不是賺錢機率。它代表策略目前通過多少項研究檢查。")
+    a,b,c,d=st.columns(4)
+    a.metric("歷史跨度",f"{years} 年")
+    b.metric("完整交易",f"{ts['trades']} 筆")
+    c.metric("逐筆勝率",f"{ts['win_rate']:.1%}")
+    d.metric("每筆期望值",f"{ts['expectancy']:.2%}")
+    st.subheader("🧪 五道考試")
+    wf_rate=float(wf["PASS"].mean()) if len(wf) else 0
+    tests=[
+      ("歷史資料","PASS" if years>=3 else "WATCH",f"目前使用 {years} 年資料"),
+      ("交易樣本","PASS" if ts["trades"]>=100 else "WATCH" if ts["trades"]>=30 else "FAIL",f"{ts['trades']} 筆完整交易"),
+      ("牛熊盤整","PASS" if len(regimes)>=3 and (regimes["報酬"]>0).sum()>=2 else "WATCH",f"測到 {len(regimes)} 種市場環境"),
+      ("Walk-Forward","PASS" if wf_rate>=.6 else "WATCH" if wf_rate>=.4 else "FAIL",f"{wf['PASS'].sum() if len(wf) else 0}/{len(wf)} 個未知區段通過"),
+      ("成本壓力","PASS" if len(stress) and stress.iloc[-1]["Expectancy"]>0 else "FAIL","交易成本提高到 3 倍後再次檢查")
+    ]
+    for n,s,desc in tests:
+        ic={"PASS":"🟢","WATCH":"🟡","FAIL":"🔴"}[s]
+        st.write(f"{ic} **{n}｜{s}** — {desc}")
+    if reasons:
+        st.subheader("⚠️ 系統目前最擔心")
+        for r in reasons: st.warning(r)
+    st.subheader("🚦 我現在該怎麼做？")
+    if status=="PASS": st.success("值得繼續研究與 Paper Trading；仍不代表適合投入真實資金。")
+    elif status=="WATCH": st.warning("有一些證據，但仍有弱點。先處理黃色項目，不建議進入實盤。")
+    else: st.error("目前驗證不足。與其調參數把結果修漂亮，更建議先淘汰或重新思考策略。")
 else:
-    st.header("🔬 專業交易分析")
-    cols=st.columns(6)
-    vals=[("Trades",ts["trades"]),("Win Rate",f"{ts['win_rate']:.2%}"),
-          ("Avg Win",f"{ts['avg_win']:.2%}"),("Avg Loss",f"{ts['avg_loss']:.2%}"),
-          ("Expectancy",f"{ts['expectancy']:.2%}"),("Max Losing Streak",ts["max_consecutive_losses"])]
-    for c,(n,v) in zip(cols,vals): c.metric(n,v)
-    cols=st.columns(5)
-    pf="∞" if math.isinf(ts["profit_factor"]) else f"{ts['profit_factor']:.2f}"
-    payoff="∞" if math.isinf(ts["payoff"]) else f"{ts['payoff']:.2f}"
-    for c,(n,v) in zip(cols,[("Profit Factor",pf),("Payoff Ratio",payoff),
-                              ("Avg Holding Bars",f"{ts['avg_holding_bars']:.1f}"),
-                              ("Avg MAE",f"{ts['avg_mae']:.2%}"),("Avg MFE",f"{ts['avg_mfe']:.2%}")]):
-        c.metric(n,v)
+    st.header("🔬 專業驗證中心")
+    c=st.columns(6)
+    for col,(n,v) in zip(c,[("Score",score),("Return",f"{m['total_return']:.2%}"),("Max DD",f"{m['max_drawdown']:.2%}"),
+                              ("Trades",ts["trades"]),("Expectancy",f"{ts['expectancy']:.3%}"),("Win Rate",f"{ts['win_rate']:.1%}")]):
+        col.metric(n,v)
+    st.subheader("市場環境")
+    st.dataframe(regimes,use_container_width=True)
+    st.subheader("Walk-Forward")
+    st.dataframe(wf,use_container_width=True)
+    st.subheader("成本 / 滑價壓力測試")
+    st.dataframe(stress,use_container_width=True)
     st.subheader("策略淨值 vs Buy & Hold")
-    st.line_chart(results.set_index("timestamp")[["strategy_equity","buy_hold_equity"]])
-    st.subheader("逐筆交易紀錄")
-    st.dataframe(trades,use_container_width=True)
+    st.line_chart(equity.set_index("timestamp")[["strategy_equity","buy_hold_equity"]])
+    with st.expander("逐筆交易"):
+        st.dataframe(trades,use_container_width=True)
 
 st.divider()
-st.caption("v0.6｜逐筆交易統計包含固定手續費與固定滑價假設。回測不保證未來績效，且目前沒有真實下單功能。")
+st.caption("v0.7｜PASS ≠ 買入訊號。驗證分數是研究輔助工具，不是未來獲利機率。下一階段仍應加入參數穩健性、Monte Carlo 與更嚴格的統計檢定。")
