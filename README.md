@@ -1,24 +1,22 @@
 # Project Real Big Money
 
-Crypto research, backtesting and paper-trading terminal.
+Crypto research, backtesting and paper-trading project.
 
-## v0.2 — Dashboard
+## v0.3 — Strategy Research & Validation
 
-### Current features
+Current capabilities:
 - BTC / ETH / SOL
-- 15m / 1h / 4h / 1d timeframes
-- Historical OHLCV market data
-- SMA20 / SMA50
-- RSI(14)
-- SMA crossover strategy
-- Backtesting with configurable trading fees
-- Strategy return vs Buy & Hold
-- Maximum drawdown
-- Position-change count
-- Interactive Streamlit dashboard
-- Paper-trading-first design (no live order execution)
+- 15m / 1h / 4h / 1d
+- SMA20, SMA50 and RSI14
+- SMA Cross, RSI Reversion, Trend + RSI strategies
+- Trading-fee-aware backtesting
+- Strategy vs Buy & Hold
+- Return, maximum drawdown, Sharpe, Sortino, win rate and Profit Factor
+- 70/30 in-sample / out-of-sample validation
+- Detailed position and return table
+- No live order execution
 
-## Run on Windows
+## Windows
 
 ```bat
 python -m venv .venv
@@ -27,12 +25,10 @@ python -m pip install -r requirements.txt
 streamlit run app.py
 ```
 
-Your browser should open the dashboard at `http://localhost:8501`.
+Then open `http://localhost:8501`.
 
-## Safety
+## Important
+This is research software, not investment advice. A profitable backtest does not imply future profitability. Never commit API keys or secrets.
 
-This project is research software. No strategy guarantees profits. Live order execution is disabled in v0.2. Never commit exchange API keys or secrets to GitHub.
-
-## Roadmap
-
-v0.3 will focus on stronger performance analytics and multiple strategies. Later versions can add funding rates, open interest, liquidations, market sentiment, AI-assisted research and paper trading.
+## Next
+v0.4: deeper market data (funding rate, open interest, long/short context), longer historical data and stronger strategy robustness testing.
