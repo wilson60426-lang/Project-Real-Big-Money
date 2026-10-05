@@ -9,6 +9,7 @@ from backtesting.analytics import analyze
 from backtesting.trade_engine import build_trades, trade_statistics
 from backtesting.validation import regime_report, walk_forward, cost_stress, validation_score
 from backtesting.challenge import challenge_strategy
+from alerts.engine import evaluate_price_alert, entry_score
 
 st.set_page_config(page_title="Project Real Big Money",page_icon="💰",layout="wide",initial_sidebar_state="expanded")
 st.markdown("""<style>
@@ -18,13 +19,43 @@ st.markdown("""<style>
 div[data-testid="stExpander"]{border-radius:14px}
 </style>""",unsafe_allow_html=True)
 st.title("💰 Project Real Big Money")
-st.caption("v0.9 Unified｜比較市場 → 研究策略 → 挑戰策略")
+st.caption("v0.9.2 Preview｜比較市場 → 研究策略 → 挑戰策略 → 進場觀察提醒")
 
 ZH={"SMA Cross":"均線交叉策略","RSI Reversion":"RSI 超賣反彈策略","Trend + RSI":"趨勢＋RSI 策略"}
-page=st.segmented_control("你今天想做什麼？",["🌎 市場比較","🧪 策略研究","🔥 挑戰策略"],default="🌎 市場比較")
+page=st.segmented_control("你今天想做什麼？",["🌎 市場比較","🧪 策略研究","🔥 挑戰策略","🔔 價格提醒"],default="🌎 市場比較")
 st.divider()
 
-if page=="🌎 市場比較":
+if page=="🔔 價格提醒":
+    st.header("🔔 Entry Alert｜進場觀察提醒")
+    st.info("🌱 新手提示：這裡設定的是「值得你打開來看」的價格，不代表系統保證此時應買入。")
+    c1,c2=st.columns(2)
+    with c1:
+        asset=st.selectbox("想監控什麼？",list(CRYPTO),help="目前先支援 BTC、ETH、SOL；下一階段會加入美股。")
+        target=st.number_input("你的觀察價格",min_value=0.01,value=60000.0,help="例如希望 BTC 跌到 60,000 美元以下時提醒。")
+        direction=st.radio("什麼情況提醒？",["跌到這個價格以下","突破這個價格以上"],help="抄底型通常選『以下』；突破型通常選『以上』。")
+    with c2:
+        st.markdown("#### 📖 怎麼設定？")
+        st.write("**1. 選資產** → **2. 設觀察價** → **3. 選觸發方向**。")
+        st.write("下一階段會加入策略、RSI、Challenge Score 與通知管道，形成多條件 Entry Score。")
+        st.warning("目前是提醒引擎第一階段；尚未在關閉電腦後持續背景監控，也不會自動下單。")
+    if st.button("檢查目前是否達標 →",type="primary"):
+        with st.spinner("取得最新市場資料…"):
+            d=get_asset(asset,"Crypto",1,"1d")
+        if d.empty:
+            st.error("目前拿不到市場資料，請稍後再試。")
+        else:
+            current=float(d["close"].iloc[-1])
+            result=evaluate_price_alert(current,target,"below" if direction.startswith("跌") else "above")
+            st.metric("目前價格",f"$"+"{:,.2f}".format(current))
+            if result.triggered: st.success("🔔 "+result.message)
+            else: st.info("👀 "+result.message)
+            score,label,reasons=entry_score(result.triggered)
+            st.metric("目前 Entry Score",str(score)+"/100",help="目前只計入價格條件；後續會加入策略與風險驗證。")
+            st.caption(label+"｜Entry Score 不是上漲機率，也不是投資建議。")
+    with st.expander("📚 新手教學：為什麼不直接叫『買入提醒』？"):
+        st.write("價格到達只能代表第一個條件成立。真正的交易決策還應考慮趨勢、波動、交易成本、停損與策略是否經過樣本外驗證，因此系統刻意稱為『觀察提醒』。")
+
+elif page=="🌎 市場比較":
     with st.sidebar:
         st.header("🌎 市場比較")
         ta=st.selectbox("A 類型",["美股","Crypto"]); la=EQUITIES if ta=="美股" else list(CRYPTO)
@@ -101,4 +132,4 @@ else:
             with tab: st.dataframe(data,use_container_width=True,hide_index=True)
 
 st.divider()
-st.caption("Project Real Big Money v0.9 Unified｜研究用途，不構成投資建議；PASS 不代表應投入真實資金。")
+st.caption("Project Real Big Money v0.9.2 Preview｜研究用途，不構成投資建議；PASS 不代表應投入真實資金。")
