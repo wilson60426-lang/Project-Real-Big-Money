@@ -1,0 +1,8 @@
+[
+  {
+    "asset": "BTC",
+    "target": 60000,
+    "direction": "below",
+    "enabled": false
+  }
+]
