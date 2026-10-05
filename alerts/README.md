@@ -1,12 +1,22 @@
 # Entry Alert Engine
 
-目前 v0.9.2 先建立「觀察提醒」邏輯，不自動下單。
+目前採用 Gmail 作為通知方式，不自動下單。
 
-## 原則
+## 新手設定
+1. 在 Google 帳號開啟兩步驟驗證。
+2. 建立 Google App Password（應用程式密碼）。
+3. 把專案根目錄的 .env.example 複製成 .env。
+4. 在 .env 填入 GMAIL_ADDRESS、GMAIL_APP_PASSWORD、ALERT_EMAIL_TO。
+5. 在 alerts/alerts.json 設定資產、價格、方向，並把 enabled 改成 true。
+6. 執行 python -m alerts.monitor --once 測試一次。
+7. 確認正常後執行 python -m alerts.monitor --interval 300 持續監控。
+
+## 安全原則
+- 不要使用一般 Gmail 密碼。
+- 不要把 App Password 貼到 GitHub、聊天或截圖公開。
+- .env 已由 .gitignore 排除。
 - 價格到達 ≠ 一定該買。
-- 系統使用「候選觀察區」而不是「保證買點」。
-- Entry Score 可結合價格、策略訊號、RSI 與 Challenge Score。
-- 下一階段才接 Telegram / Email 等背景通知。
-- 必須加入 cooldown 與去重複通知，避免門檻附近重複轟炸。
+- 系統使用「觀察區」而不是「保證買點」。
+- 只有從未觸發變成觸發時寄信，避免重複洗信。
 
-這個模組刻意與 Streamlit UI 分離，未來可由背景排程器重複呼叫。
+下一階段會把 RSI、趨勢、策略與 Challenge Score 納入 Entry Score。
