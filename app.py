@@ -11,6 +11,7 @@ from backtesting.validation import regime_report, walk_forward, cost_stress, val
 from backtesting.challenge import challenge_strategy
 from alerts.engine import evaluate_price_alert, entry_score
 from alerts.signal import analyze_entry_candidate
+from analytics.confidence import confidence_from_challenge, combined_signal, GLOSSARY
 
 st.set_page_config(page_title="Project Real Big Money",page_icon="💰",layout="wide",initial_sidebar_state="expanded")
 st.markdown("""<style>
@@ -20,10 +21,10 @@ st.markdown("""<style>
 div[data-testid="stExpander"]{border-radius:14px}
 </style>""",unsafe_allow_html=True)
 st.title("💰 Project Real Big Money")
-st.caption("v0.9.4 Entry Intelligence｜價格 + RSI + 趨勢 + 策略 → Entry Score")
+st.caption("v0.9.5 Signal Confidence｜現在條件 + 歷史驗證 → 更可信的觀察判斷")
 
 ZH={"SMA Cross":"均線交叉策略","RSI Reversion":"RSI 超賣反彈策略","Trend + RSI":"趨勢＋RSI 策略"}
-page=st.segmented_control("你今天想做什麼？",["🌎 市場比較","🧪 策略研究","🔥 挑戰策略","🔔 價格提醒"],default="🌎 市場比較")
+page=st.segmented_control("你今天想做什麼？",["🌎 市場比較","🧪 策略研究","🔥 挑戰策略","🧠 訊號可信度","🔔 價格提醒"],default="🌎 市場比較")
 st.divider()
 
 if page=="🔔 價格提醒":
@@ -80,6 +81,58 @@ if page=="🔔 價格提醒":
             st.error("分析暫時無法完成。請稍後重試；若持續發生，再查看終端機錯誤訊息。")
             with st.expander("技術錯誤（進階使用者）"): st.code(str(e))
     st.caption("📧 Gmail 通知設定可以先略過，不影響 Entry Intelligence 分析。")
+
+elif page=="🧠 訊號可信度":
+    st.header("🧠 Signal Confidence｜這個訊號值得相信多少？")
+    st.info("🌱 新手提示：**Entry Score 看『現在』，Confidence Score 看『過去驗證是否站得住腳』。兩個都高，才比較值得進一步研究。")
+    c1,c2=st.columns(2)
+    with c1:
+        symbol=st.selectbox("① 選擇 Crypto",["BTC/USDT","ETH/USDT","SOL/USDT"],key="conf_symbol")
+        strategy=st.selectbox("② 選擇策略",list(STRATEGIES),index=2,format_func=lambda x:ZH[x],key="conf_strategy",help="新手建議先從趨勢＋RSI開始。")
+        years=st.select_slider("③ 用幾年歷史資料驗證？",[1,2,3,5],value=3,key="conf_years",format_func=lambda x:f"{x}年")
+    with c2:
+        st.markdown("#### 📖 先看懂兩個分數")
+        st.write("**Entry Score（進場條件分數）**：現在這一刻，看起來有多少條件同時支持。")
+        st.write("**Confidence Score（訊號可信度分數）**：這套策略以前接受不同測試時，有多少證據支持它不是只靠運氣。")
+        st.warning("⚠️ 80 分不是 80% 勝率，也不是 80% 機率會漲。")
+    if st.button("🧠 檢查訊號可信度",type="primary",use_container_width=True):
+        try:
+            with st.spinner("正在讓策略接受歷史資料、不同市場環境與壓力測試…"):
+                raw=fetch_history(EXCHANGE,symbol,"1d",years)
+                sig=STRATEGIES[strategy](add_indicators(raw))
+                current=float(sig["close"].iloc[-1])
+                intel=analyze_entry_candidate(raw,strategy,timeframe="1d")
+                entry,label,entry_reasons,entry_cautions=entry_score(True,intel["signal"],intel["rsi"],None,intel["trend_up"])
+                challenge=challenge_strategy(sig,float(FEE_RATE),"1d",0.0005)
+                confidence,conf_label,conf_reasons,conf_cautions=confidence_from_challenge(challenge)
+                combined,verdict,explanation=combined_signal(entry,confidence)
+            m=st.columns(3)
+            m[0].metric("Entry Score｜現在條件",str(entry)+"/100",help=GLOSSARY["Entry Score"])
+            m[1].metric("Confidence Score｜歷史可信度",str(confidence)+"/100",help=GLOSSARY["Confidence Score"])
+            m[2].metric("綜合觀察分數",str(combined)+"/100",help="Entry Score 佔 55%，Confidence Score 佔 45%。這是研究排序工具，不是獲利機率。")
+            if combined>=80: st.success("🟢 **"+verdict+"**｜"+explanation)
+            elif combined>=60: st.info("🔵 **"+verdict+"**｜"+explanation)
+            else: st.warning("🟡 **"+verdict+"**｜"+explanation)
+            a,b=st.columns(2)
+            with a:
+                st.markdown("#### ✅ 為什麼系統願意加分？")
+                for x in entry_reasons+conf_reasons: st.write("• "+x)
+                if not entry_reasons and not conf_reasons: st.write("目前沒有足夠的加分理由。")
+            with b:
+                st.markdown("#### ❓ 為什麼不是 100 分？")
+                problems=entry_cautions+conf_cautions
+                for x in problems: st.write("• "+x)
+                if not problems: st.write("目前測試沒有明顯扣分項，但未來市場仍可能與歷史不同。")
+            with st.expander("📚 新手字典｜看不懂專有名詞就打開這裡"):
+                for term,plain in GLOSSARY.items():
+                    st.markdown("**"+term+"**")
+                    st.write(plain)
+            with st.expander("🔬 進階資料｜Challenge 測試明細"):
+                st.dataframe(challenge["checks"],use_container_width=True,hide_index=True)
+                st.caption("Challenge Score："+str(challenge["score"])+"/100｜"+GLOSSARY["Challenge Score"])
+        except Exception as e:
+            st.error("可信度分析暫時無法完成。可能是市場資料來源暫時無回應；請稍後再試。")
+            with st.expander("技術錯誤（進階使用者）"): st.code(str(e))
 
 elif page=="🌎 市場比較":
     with st.sidebar:
@@ -158,4 +211,4 @@ else:
             with tab: st.dataframe(data,use_container_width=True,hide_index=True)
 
 st.divider()
-st.caption("Project Real Big Money v0.9.4 Entry Intelligence｜研究用途，不構成投資建議；PASS 不代表應投入真實資金。")
+st.caption("Project Real Big Money v0.9.5 Signal Confidence｜研究用途，不構成投資建議；PASS 不代表應投入真實資金。")
