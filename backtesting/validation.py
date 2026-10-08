@@ -13,13 +13,23 @@ def classify_regimes(df):
     return d
 
 def regime_report(df, fee, timeframe):
-    d=classify_regimes(df); out=[]
+    # Calculate returns on the full uninterrupted timeline BEFORE filtering regimes.
+    d=classify_regimes(df)
+    full,_=analyze(d,fee,timeframe)
+    full["regime"]=d.loc[full.index,"regime"]
+    out=[]
     for name in ["牛市","熊市","盤整"]:
-        x=d[d["regime"]==name]
+        x=full.loc[full["regime"]==name,"strategy_return"]
         if len(x)<50: continue
-        _,m=analyze(x,fee,timeframe)
-        out.append({"市場":name,"K線數":len(x),"報酬":m["total_return"],"最大回撤":m["max_drawdown"],"Sharpe":m["sharpe"]})
+        equity=(1+x).cumprod()
+        peak=equity.cummax().clip(lower=1)
+        drawdown=(equity/peak-1).min()
+        std=x.std()
+        ann={"1h":8760,"4h":2190,"1d":365}.get(timeframe,365)
+        sharpe=float(np.sqrt(ann)*x.mean()/std) if pd.notna(std) and std>0 else 0.0
+        out.append({"市場":name,"K線數":len(x),"報酬":float(equity.iloc[-1]-1),"最大回撤":float(drawdown),"Sharpe":sharpe})
     return pd.DataFrame(out)
+
 
 def walk_forward(df, fee, timeframe, windows=5):
     n=len(df); step=max(100,n//(windows+2)); out=[]
