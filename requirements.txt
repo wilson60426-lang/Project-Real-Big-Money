@@ -5,3 +5,4 @@ python-dotenv>=1.0
 streamlit>=1.40
 yfinance>=0.2.54
 pytest>=8.0
+plotly>=5.20
