@@ -56,11 +56,15 @@ if page=="📈 K 線研究室":
                     st.plotly_chart(fig,use_container_width=True)
                     st.markdown("#### 💡 為什麼指標這樣顯示？")
                     for message in messages: st.write("• "+message)
-                    with st.expander("📚 新手詞典｜K 線、SMA、RSI 是什麼？"):
+                    with st.expander("📚 新手詞典｜K 線、均線、MACD、布林通道與 ATR"):
                         st.write("**K 線**：一根柱子記錄某段時間的開盤、最高、最低與收盤價格。")
                         st.write("**SMA20 / SMA50**：最近 20 / 50 根 K 線的收盤平均價；用來比較短期和較長期的方向。")
                         st.write("**RSI 14**：比較最近 14 段的漲跌力道；超過 70 或低於 30 不等於一定反轉。")
                         st.write("**成交量**：這段時間買賣成交的數量，量大不一定代表價格會上漲。")
+                        st.write("**EMA（指數移動平均）**：近期價格權重較高的均線，比 SMA 對新價格更敏感。")
+                        st.write("**MACD（移動平均收斂發散）**：比較兩條 EMA 的差距與變化，柱狀體顯示動能差距，不是保證轉折的訊號。")
+                        st.write("**布林通道**：20 根平均價上下各兩倍標準差；反映價格相對近期波動的位置。")
+                        st.write("**ATR（平均真實波幅）**：衡量波動幅度，不預測價格方向；可用來輔助設定風險距離。")
                     st.caption("行情來源：Crypto 交易所公開行情／股票 Yahoo Finance。股票為研究用途，可能延遲，非交易所即時報價。")
         except Exception as e:
             st.error("K 線載入失敗，可能是行情服務暫時無回應。")
