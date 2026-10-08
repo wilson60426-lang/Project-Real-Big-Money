@@ -4,10 +4,10 @@ import pandas as pd
 PERIODS={"15m":365*24*4,"1h":365*24,"4h":365*6,"1d":365}
 
 def analyze(df: pd.DataFrame, fee_rate: float, timeframe: str) -> tuple[pd.DataFrame,dict]:
-    d=df.dropna().copy()
+    d=df.dropna(subset=["close","signal"]).copy()
     d["market_return"]=d["close"].pct_change().fillna(0)
     d["position"]=d["signal"].shift(1).fillna(0)
-    d["turnover"]=d["position"].diff().abs().fillna(0)
+    d["turnover"]=d["position"].diff().abs().fillna(d["position"].abs())
     d["strategy_return"]=d["position"]*d["market_return"]-d["turnover"]*fee_rate
     d["strategy_equity"]=(1+d["strategy_return"]).cumprod()
     d["buy_hold_equity"]=(1+d["market_return"]).cumprod()
