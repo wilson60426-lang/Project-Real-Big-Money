@@ -12,6 +12,8 @@ from backtesting.challenge import challenge_strategy
 from alerts.engine import evaluate_price_alert, entry_score
 from alerts.signal import analyze_entry_candidate
 from analytics.confidence import confidence_from_challenge, combined_signal, GLOSSARY
+from charts.workbench import make_chart
+from news.free_feed import fetch_news
 
 st.set_page_config(page_title="Project Real Big Money",page_icon="💰",layout="wide",initial_sidebar_state="expanded")
 st.markdown("""<style>
@@ -21,13 +23,78 @@ st.markdown("""<style>
 div[data-testid="stExpander"]{border-radius:14px}
 </style>""",unsafe_allow_html=True)
 st.title("💰 Project Real Big Money")
-st.caption("v0.9.5 Signal Confidence｜現在條件 + 歷史驗證 → 更可信的觀察判斷")
+st.caption("v0.9.6 免費市場情報中心｜K 線解說 + 全球金融快報")
 
 ZH={"SMA Cross":"均線交叉策略","RSI Reversion":"RSI 超賣反彈策略","Trend + RSI":"趨勢＋RSI 策略"}
-page=st.segmented_control("你今天想做什麼？",["🌎 市場比較","🧪 策略研究","🔥 挑戰策略","🧠 訊號可信度","🔔 價格提醒"],default="🌎 市場比較")
+page=st.segmented_control("你今天想做什麼？",["📈 K 線研究室","📰 全球金融快報","🌎 市場比較","🧪 策略研究","🔥 挑戰策略","🧠 訊號可信度","🔔 價格提醒"],default="📈 K 線研究室")
 st.divider()
 
-if page=="🔔 價格提醒":
+if page=="📈 K 線研究室":
+    st.header("📈 K 線研究室｜圖上看到什麼，系統就解釋什麼")
+    st.info("🌱 K 線每根柱子代表一段時間內的開盤、最高、最低與收盤價格；綠紅顏色只表示該段漲跌，並不是買賣建議。")
+    a,b,d=st.columns(3)
+    with a: market=st.selectbox("市場",["Crypto","美股","台股"])
+    with b:
+        symbols={"Crypto":["BTC/USDT","ETH/USDT","SOL/USDT"],"美股":["AAPL","NVDA","SPY","QQQ"],"台股":["2330.TW","0050.TW","2317.TW","2454.TW"]}
+        symbol=st.selectbox("標的",symbols[market])
+    with d: timeframe=st.selectbox("K 線週期",["1d","4h","1h"] if market=="Crypto" else ["1d"],format_func=lambda x:{"1d":"日 K（一天一根）","4h":"4 小時 K","1h":"1 小時 K"}[x])
+    if st.button("📊 載入 K 線與白話分析",type="primary",use_container_width=True):
+        try:
+            with st.spinner("正在取得行情與計算指標…"):
+                if market=="Crypto":
+                    raw=fetch_history(EXCHANGE,symbol,timeframe,1)
+                else:
+                    import yfinance as yf
+                    x=yf.download(symbol,period="1y",interval="1d",auto_adjust=True,progress=False)
+                    if hasattr(x.columns,"nlevels") and x.columns.nlevels>1: x.columns=x.columns.get_level_values(0)
+                    raw=x.reset_index().rename(columns={"Date":"timestamp","Open":"open","High":"high","Low":"low","Close":"close","Volume":"volume"})
+                    raw.columns=[str(z).lower() for z in raw.columns]
+                if raw is None or raw.empty or len(raw)<20:
+                    st.warning("行情資料不足，請稍後重試或換一個標的。")
+                else:
+                    fig,messages=make_chart(raw,symbol)
+                    st.plotly_chart(fig,use_container_width=True)
+                    st.markdown("#### 💡 為什麼指標這樣顯示？")
+                    for message in messages: st.write("• "+message)
+                    with st.expander("📚 新手詞典｜K 線、SMA、RSI 是什麼？"):
+                        st.write("**K 線**：一根柱子記錄某段時間的開盤、最高、最低與收盤價格。")
+                        st.write("**SMA20 / SMA50**：最近 20 / 50 根 K 線的收盤平均價；用來比較短期和較長期的方向。")
+                        st.write("**RSI 14**：比較最近 14 段的漲跌力道；超過 70 或低於 30 不等於一定反轉。")
+                        st.write("**成交量**：這段時間買賣成交的數量，量大不一定代表價格會上漲。")
+                    st.caption("行情來源：Crypto 交易所公開行情／股票 Yahoo Finance。股票為研究用途，可能延遲，非交易所即時報價。")
+        except Exception as e:
+            st.error("K 線載入失敗，可能是行情服務暫時無回應。")
+            with st.expander("進階錯誤資訊"): st.code(str(e))
+
+elif page=="📰 全球金融快報":
+    st.header("📰 全球金融快報｜免費新聞來源")
+    st.info("🌱 這裡會整理公開 RSS 新聞。更新頻率不等於新聞發布速度；目前沒有保證每則新聞都能在一分鐘內出現。")
+    category=st.selectbox("想看哪個市場？",["全部","全球財經","台股","美股","加密貨幣"])
+    @st.cache_data(ttl=120,show_spinner=False)
+    def cached_news(cat):
+        return fetch_news(cat)
+    if st.button("🔄 重新檢查來源"):
+        cached_news.clear()
+    with st.spinner("正在整理最新新聞…"):
+        items,errors=cached_news(category)
+    from datetime import datetime, timezone
+    now=datetime.now(timezone.utc)
+    st.caption("畫面檢查時間（UTC）："+now.strftime("%Y-%m-%d %H:%M")+"｜資料快取最多 2 分鐘；新聞時間以來源提供為準。")
+    if errors: st.warning("部分來源暫時無法取得："+ "、".join(errors))
+    if not items: st.info("目前沒有取得新聞，請稍後重試或選擇其他分類。")
+    for item in items:
+        when=item["published"]
+        stamp=when.astimezone().strftime("%m/%d %H:%M") if when else "未提供發布時間"
+        st.markdown("**"+item["title"]+"**")
+        st.caption(item["category"]+"｜"+item["source"]+"｜"+stamp)
+        st.link_button("閱讀原文 ↗",item["url"])
+        st.divider()
+    with st.expander("📚 新手提示｜如何判讀快訊？"):
+        st.write("**發布時間**不是系統發現時間；某些 RSS 可能延後更新。")
+        st.write("**新聞標題**不是已驗證的交易訊號；要核對原文與官方公告。")
+        st.write("**Google News**是新聞索引，不代表所有媒體都有授權可全文轉載。這裡只提供標題及原文連結。")
+
+elif page=="🔔 價格提醒":
     st.header("🔔 Entry Intelligence｜進場觀察中心")
     st.info("🌱 新手模式：系統不是只看價格，而是一起檢查價格、RSI、趨勢與策略訊號，再告訴你『為什麼值得看』。")
     c1,c2=st.columns(2)
@@ -211,4 +278,4 @@ else:
             with tab: st.dataframe(data,use_container_width=True,hide_index=True)
 
 st.divider()
-st.caption("Project Real Big Money v0.9.5 Signal Confidence｜研究用途，不構成投資建議；PASS 不代表應投入真實資金。")
+st.caption("Project Real Big Money v0.9.6 Free Market Intelligence｜研究用途，不構成投資建議；PASS 不代表應投入真實資金。")
