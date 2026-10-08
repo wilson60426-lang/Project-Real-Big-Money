@@ -23,7 +23,7 @@ st.markdown("""<style>
 div[data-testid="stExpander"]{border-radius:14px}
 </style>""",unsafe_allow_html=True)
 st.title("💰 Project Real Big Money")
-st.caption("v0.9.6 免費市場情報中心｜K 線解說 + 全球金融快報")
+st.caption("v0.9.7 智慧 K 線研究室｜K 線解說 + 全球金融快報")
 
 ZH={"SMA Cross":"均線交叉策略","RSI Reversion":"RSI 超賣反彈策略","Trend + RSI":"趨勢＋RSI 策略"}
 page=st.segmented_control("你今天想做什麼？",["📈 K 線研究室","📰 全球金融快報","🌎 市場比較","🧪 策略研究","🔥 挑戰策略","🧠 訊號可信度","🔔 價格提醒"],default="📈 K 線研究室")
@@ -169,7 +169,9 @@ elif page=="🧠 訊號可信度":
                 sig=STRATEGIES[strategy](add_indicators(raw))
                 current=float(sig["close"].iloc[-1])
                 intel=analyze_entry_candidate(raw,strategy,timeframe="1d")
-                entry,label,entry_reasons,entry_cautions=entry_score(True,intel["signal"],intel["rsi"],None,intel["trend_up"])
+                entry,label,entry_reasons,entry_cautions=entry_score(False,intel["signal"],intel["rsi"],None,intel["trend_up"])
+                entry_cautions=[x for x in entry_cautions if "價格尚未進入" not in x]
+                entry_cautions.append("本頁未設定觀察價：價格條件不計分，最高只有 45 分；勿與有設定觀察價的分數直接比較。")
                 challenge=challenge_strategy(sig,float(FEE_RATE),"1d",0.0005)
                 confidence,conf_label,conf_reasons,conf_cautions=confidence_from_challenge(challenge)
                 combined,verdict,explanation=combined_signal(entry,confidence)
@@ -278,4 +280,4 @@ else:
             with tab: st.dataframe(data,use_container_width=True,hide_index=True)
 
 st.divider()
-st.caption("Project Real Big Money v0.9.6 Free Market Intelligence｜研究用途，不構成投資建議；PASS 不代表應投入真實資金。")
+st.caption("Project Real Big Money v0.9.7 Smart Chart｜研究用途，不構成投資建議；PASS 不代表應投入真實資金。")
