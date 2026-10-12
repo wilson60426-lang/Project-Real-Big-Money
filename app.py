@@ -41,7 +41,7 @@ if page=="📈 K 線研究室":
         symbol=st.selectbox("標的",symbols[market])
     with d: timeframe=st.selectbox("K 線週期",["1d","4h","1h"] if market=="Crypto" else ["1d"],format_func=lambda x:{"1d":"日 K（一天一根）","4h":"4 小時 K","1h":"1 小時 K"}[x])
     show_trf=st.checkbox("顯示 Twin Range Filter（雙重區間濾波器）",value=True)
-    if st.button("📊 載入 K 線與白話分析",type="primary",use_container_width=True):
+    if st.toggle("📊 載入 K 線與白話分析",value=False,help="開啟後可持續框選；關閉則停止顯示圖表。"):
         try:
             with st.spinner("正在取得行情與計算指標…"):
                 if market=="Crypto":
