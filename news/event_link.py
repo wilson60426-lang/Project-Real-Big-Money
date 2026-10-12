@@ -26,13 +26,17 @@ def relevant_news(items,symbol):
             result.append(item)
     return result
 
-def event_reactions(df,items,limit=12):
+def event_reactions(df,items,limit=12,timeframe='1d',now=None):
     """Map to first candle starting on/after publication; only compare completed bars.
     For daily equity candles the calendar-day mapping is illustrative, not intraday attribution.
     """
     d=df.copy().sort_values("timestamp")
     if len(d)<3: return []
     times=pd.to_datetime(d["timestamp"],utc=True)
+    duration=pd.Timedelta({"1h":"1h","4h":"4h","1d":"1d"}.get(timeframe,"1d"))
+    current=pd.Timestamp.now(tz="UTC") if now is None else pd.Timestamp(now)
+    if current.tzinfo is None: current=current.tz_localize("UTC")
+    else: current=current.tz_convert("UTC")
     out=[]
     for item in items:
         published=item.get("published")
@@ -44,7 +48,7 @@ def event_reactions(df,items,limit=12):
         if future.empty: continue
         idx=future.index[0]
         loc=d.index.get_loc(idx)
-        if not isinstance(loc,int) or loc+1>=len(d): continue
+        if not isinstance(loc,int) or times.loc[idx]+duration>current: continue
         base=float(d.iloc[loc]["open"])
         later=float(d.iloc[loc]["close"])
         if base<=0: continue
