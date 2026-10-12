@@ -63,7 +63,7 @@ if page=="📈 K 線研究室":
                             return fetch_news("加密貨幣",60)
                         news_items,news_errors=chart_news()
                         matches=relevant_news(news_items,symbol)
-                        reactions=event_reactions(raw,matches,8)
+                        reactions=event_reactions(raw,matches,8,timeframe=timeframe)
                         if news_errors: st.caption("部分新聞來源暫時無法連線："+ "、".join(news_errors))
                         if not matches:
                             st.info("免費來源目前沒有找到標題直接提到這個標的的新聞。這不代表市場沒有消息。")
