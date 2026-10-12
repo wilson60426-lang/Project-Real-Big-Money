@@ -61,8 +61,8 @@ if page=="📈 K 線研究室":
                     chosen=[]
                     if event is not None:
                         for point in event.selection.points:
-                            if point.get("curve_number")==len(fig.data)-2:
-                                chosen.append(point.get("point_index"))
+                            if point.get("curve_number")==next((i for i,t in enumerate(fig.data) if t.name=="框選 K 線"),-1):
+                                chosen.append(point.get("customdata",point.get("point_index")))
                     chosen=[int(v) for v in chosen if v is not None]
                     with st.expander("🔎 分析指定 K 線區間",expanded=len(chosen)>=3):
                         if len(chosen)>=3:
