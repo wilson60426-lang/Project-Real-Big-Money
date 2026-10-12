@@ -2,6 +2,7 @@ import pandas as pd
 import plotly.graph_objects as go
 from plotly.subplots import make_subplots
 from indicators.basic import add_indicators
+from indicators.twin_range import twin_range_filter
 
 def describe_indicators(df):
     d=add_indicators(df)
@@ -34,12 +35,20 @@ def describe_indicators(df):
     messages.append("以上指標多數由同一組價格計算，彼此相關；多個指標同向不等於多份獨立證據。")
     return d,messages
 
-def make_chart(df,symbol):
+def make_chart(df,symbol,show_trf=True):
     d,messages=describe_indicators(df)
+    if show_trf:
+        d=twin_range_filter(d)
+        if d["trf_filter"].notna().any():
+            messages.append("Twin Range Filter：價格位於濾波線上方且線向上時，視為偏多觀察條件；反之偏空。震盪盤容易產生假訊號，且不同腳本的參數與實作可能不同。")
     fig=make_subplots(rows=4,cols=1,shared_xaxes=True,vertical_spacing=0.035,row_heights=[0.57,0.13,0.15,0.15])
     fig.add_trace(go.Candlestick(x=d["timestamp"],open=d["open"],high=d["high"],low=d["low"],close=d["close"],name="K 線"),row=1,col=1)
     for name,color in [("sma_20","#e6a23c"),("sma_50","#508ee6"),("ema_12","#20a787"),("bb_upper","#999999"),("bb_lower","#999999")]:
         fig.add_trace(go.Scatter(x=d["timestamp"],y=d[name],mode="lines",name=name.upper(),line=dict(color=color,width=1 if name.startswith("bb_") else 1.6,dash="dot" if name.startswith("bb_") else "solid")),row=1,col=1)
+    if show_trf:
+        fig.add_trace(go.Scatter(x=d["timestamp"],y=d["trf_filter"],mode="lines",name="Twin Range Filter",line=dict(color="#f06292",width=2)),row=1,col=1)
+    # Invisible-looking selectable markers enable drag-box selection of candle close prices.
+    fig.add_trace(go.Scatter(x=d["timestamp"],y=d["close"],mode="markers",name="框選 K 線",marker=dict(size=9,color="rgba(60,160,230,0.02)"),showlegend=False,customdata=list(range(len(d))),hoverinfo="skip"),row=1,col=1)
     fig.add_trace(go.Bar(x=d["timestamp"],y=d["volume"],name="成交量",marker_color="#7b8794"),row=2,col=1)
     fig.add_trace(go.Scatter(x=d["timestamp"],y=d["rsi_14"],name="RSI 14",line=dict(color="#a77de3")),row=3,col=1)
     fig.add_hline(y=70,row=3,col=1,line_dash="dot",line_color="#d76565")
@@ -47,7 +56,7 @@ def make_chart(df,symbol):
     fig.add_trace(go.Bar(x=d["timestamp"],y=d["macd_hist"],name="MACD 柱",marker_color="#8f9eb3"),row=4,col=1)
     fig.add_trace(go.Scatter(x=d["timestamp"],y=d["macd"],name="MACD",line=dict(color="#e6a23c")),row=4,col=1)
     fig.add_trace(go.Scatter(x=d["timestamp"],y=d["macd_signal"],name="MACD 訊號線",line=dict(color="#508ee6")),row=4,col=1)
-    fig.update_layout(title=symbol+"｜智慧 K 線與指標",height=880,xaxis_rangeslider_visible=False,hovermode="x unified",legend=dict(orientation="h",y=1.06,x=0))
+    fig.update_layout(title=symbol+"｜智慧 K 線與指標",height=880,xaxis_rangeslider_visible=False,hovermode="x unified",dragmode="select",legend=dict(orientation="h",y=1.06,x=0))
     for row,title in [(1,"價格"),(2,"成交量"),(3,"RSI"),(4,"MACD")]:
         fig.update_yaxes(title_text=title,row=row,col=1)
     fig.update_yaxes(range=[0,100],row=3,col=1)
