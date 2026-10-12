@@ -14,6 +14,7 @@ from alerts.signal import analyze_entry_candidate
 from analytics.confidence import confidence_from_challenge, combined_signal, GLOSSARY
 from charts.workbench import make_chart
 from news.free_feed import fetch_news
+from news.event_link import relevant_news, event_reactions
 
 st.set_page_config(page_title="Project Real Big Money",page_icon="💰",layout="wide",initial_sidebar_state="expanded")
 st.markdown("""<style>
@@ -23,7 +24,7 @@ st.markdown("""<style>
 div[data-testid="stExpander"]{border-radius:14px}
 </style>""",unsafe_allow_html=True)
 st.title("💰 Project Real Big Money")
-st.caption("v0.9.7 智慧 K 線研究室｜K 線解說 + 全球金融快報")
+st.caption("v0.9.8 新聞 × K 線事件連動｜免費市場情報研究")
 
 ZH={"SMA Cross":"均線交叉策略","RSI Reversion":"RSI 超賣反彈策略","Trend + RSI":"趨勢＋RSI 策略"}
 page=st.segmented_control("你今天想做什麼？",["📈 K 線研究室","📰 全球金融快報","🌎 市場比較","🧪 策略研究","🔥 挑戰策略","🧠 訊號可信度","🔔 價格提醒"],default="📈 K 線研究室")
@@ -54,6 +55,31 @@ if page=="📈 K 線研究室":
                 else:
                     fig,messages=make_chart(raw,symbol)
                     st.plotly_chart(fig,use_container_width=True)
+                    st.markdown("#### 📰 新聞與 K 線連動（研究功能）")
+                    st.caption("目前僅對 Crypto 顯示事件後 K 線的觀察值。股票跨時區與休市時段需更精確處理，暫不提供事件報酬。")
+                    if market=="Crypto":
+                        @st.cache_data(ttl=120,show_spinner=False)
+                        def chart_news():
+                            return fetch_news("加密貨幣",60)
+                        news_items,news_errors=chart_news()
+                        matches=relevant_news(news_items,symbol)
+                        reactions=event_reactions(raw,matches,8)
+                        if news_errors: st.caption("部分新聞來源暫時無法連線："+ "、".join(news_errors))
+                        if not matches:
+                            st.info("免費來源目前沒有找到標題直接提到這個標的的新聞。這不代表市場沒有消息。")
+                        elif not reactions:
+                            st.info("有相關新聞，但目前沒有足夠的事件後完整 K 線可比較；不顯示報酬。")
+                        else:
+                            st.warning("⚠️ 下列數值是『新聞發布後第一根可對應 K 線的開收盤變化』，不是新聞造成的報酬，也不是事件研究的因果結論。")
+                            for ev in reactions:
+                                stamp=ev["published"].strftime("%Y-%m-%d %H:%M UTC")
+                                st.markdown("**"+ev["title"]+"**")
+                                st.caption(ev["source"]+"｜發布："+stamp+"｜對應 K 線變化："+format(ev["candle_return"],"+.2%"))
+                                st.link_button("閱讀原始新聞 ↗",ev["url"])
+                        with st.expander("🔍 為什麼沒有把每則新聞直接畫成買賣箭頭？"):
+                            st.write("標題關鍵字只能建立初步關聯，不能證明消息會影響價格；免費 RSS 也可能延遲。")
+                            st.write("未收盤 K 線、休市時間、資料來源時間戳與事件發布時間都可能影響結論。未來會加入精確時區校準與完整事件研究。")
+
                     st.markdown("#### 💡 為什麼指標這樣顯示？")
                     for message in messages: st.write("• "+message)
                     with st.expander("📚 新手詞典｜K 線、均線、MACD、布林通道與 ATR"):
@@ -284,4 +310,4 @@ else:
             with tab: st.dataframe(data,use_container_width=True,hide_index=True)
 
 st.divider()
-st.caption("Project Real Big Money v0.9.7 Smart Chart｜研究用途，不構成投資建議；PASS 不代表應投入真實資金。")
+st.caption("Project Real Big Money v0.9.8 News-Chart Link｜研究用途，不構成投資建議；PASS 不代表應投入真實資金。")
