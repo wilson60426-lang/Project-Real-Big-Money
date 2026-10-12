@@ -13,6 +13,7 @@ from alerts.engine import evaluate_price_alert, entry_score
 from alerts.signal import analyze_entry_candidate
 from analytics.confidence import confidence_from_challenge, combined_signal, GLOSSARY
 from charts.workbench import make_chart
+from charts.region_analysis import explain_region
 from news.free_feed import fetch_news
 from news.event_link import relevant_news, event_reactions
 
@@ -24,7 +25,7 @@ st.markdown("""<style>
 div[data-testid="stExpander"]{border-radius:14px}
 </style>""",unsafe_allow_html=True)
 st.title("💰 Project Real Big Money")
-st.caption("v0.9.8 新聞 × K 線事件連動｜免費市場情報研究")
+st.caption("v0.9.9 區域解讀 + Twin Range Filter｜免費市場情報研究")
 
 ZH={"SMA Cross":"均線交叉策略","RSI Reversion":"RSI 超賣反彈策略","Trend + RSI":"趨勢＋RSI 策略"}
 page=st.segmented_control("你今天想做什麼？",["📈 K 線研究室","📰 全球金融快報","🌎 市場比較","🧪 策略研究","🔥 挑戰策略","🧠 訊號可信度","🔔 價格提醒"],default="📈 K 線研究室")
@@ -39,6 +40,7 @@ if page=="📈 K 線研究室":
         symbols={"Crypto":["BTC/USDT","ETH/USDT","SOL/USDT"],"美股":["AAPL","NVDA","SPY","QQQ"],"台股":["2330.TW","0050.TW","2317.TW","2454.TW"]}
         symbol=st.selectbox("標的",symbols[market])
     with d: timeframe=st.selectbox("K 線週期",["1d","4h","1h"] if market=="Crypto" else ["1d"],format_func=lambda x:{"1d":"日 K（一天一根）","4h":"4 小時 K","1h":"1 小時 K"}[x])
+    show_trf=st.checkbox("顯示 Twin Range Filter（雙重區間濾波器）",value=True)
     if st.button("📊 載入 K 線與白話分析",type="primary",use_container_width=True):
         try:
             with st.spinner("正在取得行情與計算指標…"):
@@ -53,8 +55,28 @@ if page=="📈 K 線研究室":
                 if raw is None or raw.empty or len(raw)<20:
                     st.warning("行情資料不足，請稍後重試或換一個標的。")
                 else:
-                    fig,messages=make_chart(raw,symbol)
-                    st.plotly_chart(fig,use_container_width=True)
+                    fig,messages=make_chart(raw,symbol,show_trf=show_trf)
+                    st.caption("在圖表工具列選擇「框選」並拖曳 K 線；也可以在下方手動指定起訖 K 線。")
+                    event=st.plotly_chart(fig,use_container_width=True,key="research_chart",on_select="rerun",selection_mode="box")
+                    chosen=[]
+                    if event is not None:
+                        for point in event.selection.points:
+                            if point.get("curve_number")==len(fig.data)-2:
+                                chosen.append(point.get("point_index"))
+                    chosen=[int(v) for v in chosen if v is not None]
+                    with st.expander("🔎 分析指定 K 線區間",expanded=len(chosen)>=3):
+                        if len(chosen)>=3:
+                            start_idx,end_idx=min(chosen),max(chosen)
+                            st.success("已框選 K 線，分析連續區段。")
+                        else:
+                            st.caption("請框選至少 3 根 K 線，或指定下方的起訖位置。")
+                            start_idx=st.number_input("起始 K 線位置（從 1 開始）",min_value=1,max_value=len(raw)-2,value=max(1,len(raw)-30),step=1)-1
+                            end_idx=st.number_input("結束 K 線位置（從 1 開始）",min_value=3,max_value=len(raw),value=len(raw),step=1)-1
+                        if end_idx-start_idx>=2:
+                            st.caption("期間："+str(raw["timestamp"].iloc[start_idx])+" ～ "+str(raw["timestamp"].iloc[end_idx]))
+                            for sentence in explain_region(raw,start_idx,end_idx): st.write("• "+sentence)
+                        else:
+                            st.warning("請至少選取連續 3 根 K 線。")
                     st.markdown("#### 📰 新聞與 K 線連動（研究功能）")
                     st.caption("目前僅對 Crypto 顯示事件後 K 線的觀察值。股票跨時區與休市時段需更精確處理，暫不提供事件報酬。")
                     if market=="Crypto":
@@ -310,4 +332,4 @@ else:
             with tab: st.dataframe(data,use_container_width=True,hide_index=True)
 
 st.divider()
-st.caption("Project Real Big Money v0.9.8 News-Chart Link｜研究用途，不構成投資建議；PASS 不代表應投入真實資金。")
+st.caption("Project Real Big Money v0.9.9 Region Analysis + TRF｜研究用途，不構成投資建議；PASS 不代表應投入真實資金。")
