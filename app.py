@@ -17,6 +17,7 @@ from charts.region_analysis import explain_region
 from news.free_feed import fetch_news
 from news.event_link import relevant_news, event_reactions
 from news.translation import translate_headline
+from news.research_assistant import analyze_headline, lookup_terms
 from localization.assets import asset_label, market_label
 
 st.set_page_config(page_title="Project Real Big Money",page_icon="💰",layout="wide",initial_sidebar_state="expanded")
@@ -27,7 +28,7 @@ st.markdown("""<style>
 div[data-testid="stExpander"]{border-radius:14px}
 </style>""",unsafe_allow_html=True)
 st.title("💰 Project Real Big Money")
-st.caption("v0.9.10 繁中雙語｜美股、加密貨幣與新聞標題｜免費市場情報研究")
+st.caption("v0.9.11 繁中金融研究助手｜術語解釋與事件情境分析｜免費市場情報研究")
 
 ZH={"SMA Cross":"均線交叉策略","RSI Reversion":"RSI 超賣反彈策略","Trend + RSI":"趨勢＋RSI 策略"}
 @st.cache_data(ttl=86400,show_spinner=False)
@@ -43,7 +44,41 @@ def display_headline(title,translate=False):
             return
     st.write(title)
 
-page=st.segmented_control("你今天想做什麼？",["📈 K 線研究室","📰 全球金融快報","🌎 市場比較","🧪 策略研究","🔥 挑戰策略","🧠 訊號可信度","🔔 價格提醒"],default="📈 K 線研究室")
+def show_news_research(headline,source="使用者輸入",published=None,url=None,translate=False):
+    """Explain terms and channels without pretending to validate full articles."""
+    analysis=analyze_headline(headline,source)
+    st.markdown("#### 🔎 新聞白話拆解")
+    display_headline(analysis["headline"],translate)
+    timestamp=published.strftime("%Y-%m-%d %H:%M %Z") if published else "未提供"
+    st.caption("來源："+source+"｜來源標示的發布時間："+timestamp)
+    st.info("資料來源判讀："+analysis["source_note"])
+    if url:
+        st.link_button("開啟原文核對 ↗",url)
+    if analysis["unclassified"]:
+        st.warning("僅憑這段文字無法辨識明確的事件類別；不會硬猜利多或利空。請查原文及市場資料。")
+    else:
+        for ev in analysis["events"]:
+            with st.container(border=True):
+                st.markdown("**可能涉及的事件："+ev["name"]+"**")
+                st.write("**可能影響的因素：** "+ev["channel"])
+                st.write("**兩面情境：** "+ev["possible"])
+                st.write("**下一步查核：**")
+                for question in ev["verify"]:
+                    st.write("• "+question)
+    if analysis["terms"]:
+        with st.expander("📖 這則新聞出現的金融英文與中文解釋",expanded=True):
+            for term in analysis["terms"]:
+                st.markdown("**"+term["english"]+"｜"+term["chinese"]+"**")
+                st.write(term["meaning"])
+                st.caption("查核重點："+term["verify"])
+    else:
+        st.caption("這則標題沒有命中目前的術語詞典。可切換金融詞典查詢其他詞彙。")
+    with st.expander("⚠️ 這份解讀有哪些限制？"):
+        for caution in analysis["caveats"]:
+            st.write("• "+caution)
+        st.write("**技術方式：** 使用本機關鍵字規則產生研究問題，不使用付費 AI 模型；不是全文事實查核或即時行情驗證。")
+
+page=st.segmented_control("你今天想做什麼？",["📈 K 線研究室","📰 全球金融快報","📚 金融研究助手","🌎 市場比較","🧪 策略研究","🔥 挑戰策略","🧠 訊號可信度","🔔 價格提醒"],default="📈 K 線研究室")
 st.divider()
 
 if page=="📈 K 線研究室":
@@ -117,6 +152,13 @@ if page=="📈 K 線研究室":
                                 display_headline(ev["title"],translate_chart_news and index<6)
                                 st.caption(ev["source"]+"｜發布："+stamp+"｜對應 K 線變化："+format(ev["candle_return"],"+.2%"))
                                 st.link_button("閱讀原始新聞 ↗",ev["url"])
+                        if matches:
+                            with st.expander("📖 解讀與本標的相關的新聞（事件類型與專業英文）"):
+                                chart_index=st.selectbox("挑選新聞標題",range(min(len(matches),20)),
+                                    format_func=lambda idx:matches[idx]["title"][:100],key="chart_study_index")
+                                article=matches[chart_index]
+                                show_news_research(article["title"],source=article["source"],
+                                    published=article["published"],url=article["url"],translate=False)
                         with st.expander("🔍 為什麼沒有把每則新聞直接畫成買賣箭頭？"):
                             st.write("標題關鍵字只能建立初步關聯，不能證明消息會影響價格；免費 RSS 也可能延遲。")
                             st.write("未收盤 K 線、休市時間、資料來源時間戳與事件發布時間都可能影響結論。未來會加入精確時區校準與完整事件研究。")
@@ -136,6 +178,56 @@ if page=="📈 K 線研究室":
         except Exception as e:
             st.error("K 線載入失敗，可能是行情服務暫時無回應。")
             with st.expander("進階錯誤資訊"): st.code(str(e))
+
+elif page=="📚 金融研究助手":
+    st.header("📚 繁體中文金融研究助手")
+    st.info("把英文財經標題變成繁體中文術語、可能的影響管道與應查核的問題。不下買賣結論，也不宣稱已讀過新聞全文。")
+    mode=st.radio("你想怎麼研究？",["自己貼上新聞標題","從免費新聞選一則","金融英文詞典"],horizontal=True)
+    if mode=="自己貼上新聞標題":
+        headline=st.text_area(
+            "貼上英文或中文財經標題",height=100,max_chars=600,
+            placeholder="例如：Nvidia beats earnings estimates but lowers revenue guidance"
+        )
+        st.caption("離線關鍵字解讀不會把你貼上的內容送到外部服務；只有選擇翻譯英文標題時才會使用第三方翻譯。")
+        opt_translate=st.checkbox("另外翻譯這段英文標題成繁體中文",value=False,
+            help="勾選後標題會送往外部免費翻譯服務；翻譯僅供參考。")
+        if headline.strip():
+            show_news_research(headline.strip(),translate=opt_translate)
+        else:
+            st.caption("輸入標題後就會出現解讀；也可以切到金融英文詞典。")
+    elif mode=="從免費新聞選一則":
+        research_category=st.selectbox("新聞市場",["美股","全球財經","加密貨幣","台股","全部"],key="research_category")
+        @st.cache_data(ttl=120,show_spinner=False)
+        def research_news(cat):
+            return fetch_news(cat,40)
+        with st.spinner("正在讀取公開新聞標題…"):
+            selected_items,selected_errors=research_news(research_category)
+        if selected_errors: st.caption("部分新聞來源不可用："+"、".join(selected_errors))
+        if not selected_items:
+            st.warning("暫時沒有可用的新聞標題；可以切換成手動貼上標題。")
+        else:
+            index=st.selectbox("想解讀哪一則？",range(len(selected_items)),
+                format_func=lambda idx:selected_items[idx]["title"][:110],key="research_news_index")
+            chosen=selected_items[index]
+            opt_translate=st.checkbox("顯示繁體中文參考翻譯",value=False,key="research_translate",
+                help="只有這一則的英文標題會送至外部免費翻譯服務。")
+            show_news_research(chosen["title"],source=chosen["source"],
+                published=chosen["published"],url=chosen["url"],translate=opt_translate)
+    else:
+        st.subheader("📖 金融英文詞典｜查意思，更要知道怎麼核對")
+        query=st.text_input("搜尋英文縮寫或中文關鍵字",
+            placeholder="例如 EPS、Guidance、CPI、ETF、資金費率")
+        definitions=lookup_terms(query)
+        st.caption(f"找到 {len(definitions)} 筆相關詞彙｜內容是一般定義，不是特定新聞的證據。")
+        if not definitions:
+            st.info("暫時找不到這個詞彙；請試試英文縮寫或較短的中文關鍵字。")
+        else:
+            for row in definitions[:25]:
+                with st.expander(row["chinese"]+"（"+row["english"]+"）"):
+                    st.write(row["meaning"])
+                    st.caption("看財報或新聞時要注意："+row["verify"])
+            if len(definitions)>25:
+                st.caption("結果較多，請輸入更精確的關鍵字縮小範圍。")
 
 elif page=="📰 全球金融快報":
     st.header("📰 全球金融快報｜免費新聞來源")
@@ -158,6 +250,13 @@ elif page=="📰 全球金融快報":
     if translate_news: st.caption("僅翻譯英文新聞標題；可能有誤或失敗，請以英文原文為準。")
     if errors: st.warning("部分來源暫時無法取得："+ "、".join(errors))
     if not items: st.info("目前沒有取得新聞，請稍後重試或選擇其他分類。")
+    if items:
+        with st.expander("🔍 選一則新聞：了解金融術語、可能影響與需要驗證的資料"):
+            study_index=st.selectbox("選擇要研究的新聞",range(min(len(items),30)),
+                format_func=lambda idx:items[idx]["title"][:110],key="feed_study_index")
+            study=items[study_index]
+            show_news_research(study["title"],source=study["source"],
+                published=study["published"],url=study["url"],translate=False)
     for index,item in enumerate(items):
         when=item["published"]
         stamp=when.astimezone().strftime("%m/%d %H:%M") if when else "未提供發布時間"
@@ -356,4 +455,4 @@ else:
             with tab: st.dataframe(data,use_container_width=True,hide_index=True)
 
 st.divider()
-st.caption("Project Real Big Money v0.9.10 Bilingual News and Assets｜研究用途，不構成投資建議；PASS 不代表應投入真實資金。")
+st.caption("Project Real Big Money v0.9.11 Financial News Research Assistant｜研究用途，不構成投資建議；PASS 不代表應投入真實資金。")
