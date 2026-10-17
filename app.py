@@ -153,7 +153,8 @@ if page=="📈 K 線研究室":
                                 st.caption(ev["source"]+"｜發布："+stamp+"｜對應 K 線變化："+format(ev["candle_return"],"+.2%"))
                                 st.link_button("閱讀原始新聞 ↗",ev["url"])
                         if matches:
-                            with st.expander("📖 解讀與本標的相關的新聞（事件類型與專業英文）"):
+                            with st.container(border=True):
+                                st.markdown("##### 📖 解讀與本標的相關的新聞（事件類型與專業英文）")
                                 chart_index=st.selectbox("挑選新聞標題",range(min(len(matches),20)),
                                     format_func=lambda idx:matches[idx]["title"][:100],key="chart_study_index")
                                 article=matches[chart_index]
@@ -251,7 +252,8 @@ elif page=="📰 全球金融快報":
     if errors: st.warning("部分來源暫時無法取得："+ "、".join(errors))
     if not items: st.info("目前沒有取得新聞，請稍後重試或選擇其他分類。")
     if items:
-        with st.expander("🔍 選一則新聞：了解金融術語、可能影響與需要驗證的資料"):
+        with st.container(border=True):
+            st.markdown("##### 🔍 選一則新聞：了解金融術語、可能影響與需要驗證的資料")
             study_index=st.selectbox("選擇要研究的新聞",range(min(len(items),30)),
                 format_func=lambda idx:items[idx]["title"][:110],key="feed_study_index")
             study=items[study_index]
