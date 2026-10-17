@@ -15,9 +15,11 @@ SOURCES={
     ],
     "美股": [
         ("Google News 美股","https://news.google.com/rss/search?q=US%20stocks%20OR%20Federal%20Reserve&hl=en-US&gl=US&ceid=US:en"),
+        ("Google News 美股（繁中）","https://news.google.com/rss/search?q=%E7%BE%8E%E8%82%A1%20OR%20%E8%81%AF%E6%BA%96%E6%9C%83%20OR%20%E8%BC%9D%E9%81%94&hl=zh-TW&gl=TW&ceid=TW:zh-Hant"),
     ],
     "加密貨幣": [
         ("CoinDesk","https://www.coindesk.com/arc/outboundfeeds/rss/"),
+        ("Google News 加密貨幣（繁中）","https://news.google.com/rss/search?q=%E6%AF%94%E7%89%B9%E5%B9%A3%20OR%20%E4%BB%A5%E5%A4%AA%E5%B9%A3%20OR%20%E5%8A%A0%E5%AF%86%E8%B2%A8%E5%B9%A3&hl=zh-TW&gl=TW&ceid=TW:zh-Hant"),
     ],
 }
 
