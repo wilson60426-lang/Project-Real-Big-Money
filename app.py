@@ -16,6 +16,8 @@ from charts.workbench import make_chart
 from charts.region_analysis import explain_region
 from news.free_feed import fetch_news
 from news.event_link import relevant_news, event_reactions
+from news.translation import translate_headline
+from localization.assets import asset_label, market_label
 
 st.set_page_config(page_title="Project Real Big Money",page_icon="💰",layout="wide",initial_sidebar_state="expanded")
 st.markdown("""<style>
@@ -25,9 +27,22 @@ st.markdown("""<style>
 div[data-testid="stExpander"]{border-radius:14px}
 </style>""",unsafe_allow_html=True)
 st.title("💰 Project Real Big Money")
-st.caption("v0.9.9 區域解讀 + Twin Range Filter｜免費市場情報研究")
+st.caption("v0.9.10 繁中雙語｜美股、加密貨幣與新聞標題｜免費市場情報研究")
 
 ZH={"SMA Cross":"均線交叉策略","RSI Reversion":"RSI 超賣反彈策略","Trend + RSI":"趨勢＋RSI 策略"}
+@st.cache_data(ttl=86400,show_spinner=False)
+def cached_translation(title):
+    return translate_headline(title)
+
+def display_headline(title,translate=False):
+    if translate:
+        translated,ok=cached_translation(title)
+        if ok:
+            st.write("**繁體中文參考翻譯：** "+translated)
+            st.caption("英文原標題："+title)
+            return
+    st.write(title)
+
 page=st.segmented_control("你今天想做什麼？",["📈 K 線研究室","📰 全球金融快報","🌎 市場比較","🧪 策略研究","🔥 挑戰策略","🧠 訊號可信度","🔔 價格提醒"],default="📈 K 線研究室")
 st.divider()
 
@@ -35,10 +50,10 @@ if page=="📈 K 線研究室":
     st.header("📈 K 線研究室｜圖上看到什麼，系統就解釋什麼")
     st.info("🌱 K 線每根柱子代表一段時間內的開盤、最高、最低與收盤價格；綠紅顏色只表示該段漲跌，並不是買賣建議。")
     a,b,d=st.columns(3)
-    with a: market=st.selectbox("市場",["Crypto","美股","台股"])
+    with a: market=st.selectbox("市場",["Crypto","美股","台股"],format_func=market_label)
     with b:
         symbols={"Crypto":["BTC/USDT","ETH/USDT","SOL/USDT"],"美股":["AAPL","NVDA","SPY","QQQ"],"台股":["2330.TW","0050.TW","2317.TW","2454.TW"]}
-        symbol=st.selectbox("標的",symbols[market])
+        symbol=st.selectbox("標的",symbols[market],format_func=asset_label)
     with d: timeframe=st.selectbox("K 線週期",["1d","4h","1h"] if market=="Crypto" else ["1d"],format_func=lambda x:{"1d":"日 K（一天一根）","4h":"4 小時 K","1h":"1 小時 K"}[x])
     show_trf=st.checkbox("顯示 Twin Range Filter（雙重區間濾波器）",value=True)
     if st.toggle("📊 載入 K 線與白話分析",value=False,help="開啟後可持續框選；關閉則停止顯示圖表。"):
@@ -55,7 +70,7 @@ if page=="📈 K 線研究室":
                 if raw is None or raw.empty or len(raw)<20:
                     st.warning("行情資料不足，請稍後重試或換一個標的。")
                 else:
-                    fig,messages=make_chart(raw,symbol,show_trf=show_trf)
+                    fig,messages=make_chart(raw,asset_label(symbol),show_trf=show_trf)
                     st.caption("在圖表工具列選擇「框選」並拖曳 K 線；也可以在下方手動指定起訖 K 線。")
                     event=st.plotly_chart(fig,use_container_width=True,key="research_chart",on_select="rerun",selection_mode="box")
                     chosen=[]
@@ -78,6 +93,10 @@ if page=="📈 K 線研究室":
                         else:
                             st.warning("請至少選取連續 3 根 K 線。")
                     st.markdown("#### 📰 新聞與 K 線連動（研究功能）")
+                    translate_chart_news=st.checkbox(
+                        "將相關英文新聞標題翻成繁體中文（最多 6 則）",value=False,
+                        help="只有標題會傳送至外部免費翻譯服務，並保留英文原文；翻譯可能有誤。"
+                    )
                     st.caption("目前僅對 Crypto 顯示事件後 K 線的觀察值。股票跨時區與休市時段需更精確處理，暫不提供事件報酬。")
                     if market=="Crypto":
                         @st.cache_data(ttl=120,show_spinner=False)
@@ -93,9 +112,9 @@ if page=="📈 K 線研究室":
                             st.info("有相關新聞，但目前沒有足夠的事件後完整 K 線可比較；不顯示報酬。")
                         else:
                             st.warning("⚠️ 下列數值是『新聞發布後第一根可對應 K 線的開收盤變化』，不是新聞造成的報酬，也不是事件研究的因果結論。")
-                            for ev in reactions:
+                            for index,ev in enumerate(reactions):
                                 stamp=ev["published"].strftime("%Y-%m-%d %H:%M UTC")
-                                st.markdown("**"+ev["title"]+"**")
+                                display_headline(ev["title"],translate_chart_news and index<6)
                                 st.caption(ev["source"]+"｜發布："+stamp+"｜對應 K 線變化："+format(ev["candle_return"],"+.2%"))
                                 st.link_button("閱讀原始新聞 ↗",ev["url"])
                         with st.expander("🔍 為什麼沒有把每則新聞直接畫成買賣箭頭？"):
@@ -132,12 +151,17 @@ elif page=="📰 全球金融快報":
     from datetime import datetime, timezone
     now=datetime.now(timezone.utc)
     st.caption("畫面檢查時間（UTC）："+now.strftime("%Y-%m-%d %H:%M")+"｜資料快取最多 2 分鐘；新聞時間以來源提供為準。")
+    translate_news=st.checkbox(
+        "🌐 顯示繁體中文新聞翻譯（前 8 則英文標題）",value=False,
+        help="選取後才會把英文標題送往外部免費翻譯服務；不傳送完整文章或行情資料。"
+    )
+    if translate_news: st.caption("僅翻譯英文新聞標題；可能有誤或失敗，請以英文原文為準。")
     if errors: st.warning("部分來源暫時無法取得："+ "、".join(errors))
     if not items: st.info("目前沒有取得新聞，請稍後重試或選擇其他分類。")
-    for item in items:
+    for index,item in enumerate(items):
         when=item["published"]
         stamp=when.astimezone().strftime("%m/%d %H:%M") if when else "未提供發布時間"
-        st.markdown("**"+item["title"]+"**")
+        display_headline(item["title"],translate_news and index<8)
         st.caption(item["category"]+"｜"+item["source"]+"｜"+stamp)
         st.link_button("閱讀原文 ↗",item["url"])
         st.divider()
@@ -151,7 +175,7 @@ elif page=="🔔 價格提醒":
     st.info("🌱 新手模式：系統不是只看價格，而是一起檢查價格、RSI、趨勢與策略訊號，再告訴你『為什麼值得看』。")
     c1,c2=st.columns(2)
     with c1:
-        asset=st.selectbox("① 想觀察什麼？",list(CRYPTO),help="目前先支援 BTC、ETH、SOL。")
+        asset=st.selectbox("① 想觀察什麼？",list(CRYPTO),format_func=asset_label,help="目前先支援 BTC、ETH、SOL。")
         target=st.number_input("② 觀察價格",min_value=0.01,value=60000.0,help="這不是預測價格，而是你希望系統開始提高注意力的門檻。")
         direction=st.radio("③ 觸發方式",["跌到這個價格以下","突破這個價格以上"],help="想找回檔觀察區可選『以下』；想看突破可選『以上』。")
         strategy_name=st.selectbox("④ 確認策略",list(STRATEGIES),index=2,format_func=lambda x:ZH[x],help="新手建議先用『趨勢＋RSI』。")
@@ -206,7 +230,7 @@ elif page=="🧠 訊號可信度":
     st.info("🌱 新手提示：**Entry Score 看『現在』，Confidence Score 看『過去驗證是否站得住腳』。兩個都高，才比較值得進一步研究。")
     c1,c2=st.columns(2)
     with c1:
-        symbol=st.selectbox("① 選擇 Crypto",["BTC/USDT","ETH/USDT","SOL/USDT"],key="conf_symbol")
+        symbol=st.selectbox("① 選擇加密貨幣",["BTC/USDT","ETH/USDT","SOL/USDT"],format_func=asset_label,key="conf_symbol")
         strategy=st.selectbox("② 選擇策略",list(STRATEGIES),index=2,format_func=lambda x:ZH[x],key="conf_strategy",help="新手建議先從趨勢＋RSI開始。")
         years=st.select_slider("③ 用幾年歷史資料驗證？",[1,2,3,5],value=3,key="conf_years",format_func=lambda x:f"{x}年")
     with c2:
@@ -258,10 +282,10 @@ elif page=="🧠 訊號可信度":
 elif page=="🌎 市場比較":
     with st.sidebar:
         st.header("🌎 市場比較")
-        ta=st.selectbox("A 類型",["美股","Crypto"]); la=EQUITIES if ta=="美股" else list(CRYPTO)
-        aa=st.selectbox("資產 A",la,index=1 if ta=="美股" else 0)
-        tb=st.selectbox("B 類型",["Crypto","美股"]); lb=list(CRYPTO) if tb=="Crypto" else EQUITIES
-        ab=st.selectbox("資產 B",lb)
+        ta=st.selectbox("A 類型",["美股","Crypto"],format_func=market_label); la=EQUITIES if ta=="美股" else list(CRYPTO)
+        aa=st.selectbox("資產 A",la,index=1 if ta=="美股" else 0,format_func=asset_label)
+        tb=st.selectbox("B 類型",["Crypto","美股"],format_func=market_label); lb=list(CRYPTO) if tb=="Crypto" else EQUITIES
+        ab=st.selectbox("資產 B",lb,format_func=asset_label)
         years=st.select_slider("期間",[1,2,3,5],value=3,format_func=lambda x:f"{x}年")
         run=st.button("開始比較 →",type="primary",use_container_width=True)
     if not run:
@@ -278,12 +302,12 @@ elif page=="🌎 市場比較":
     elif corr>=.3: st.info(f"**有一些分散效果**｜相關性 {corr:.2f}")
     else: st.success(f"**潛在分散效果較高**｜相關性 {corr:.2f}")
     c=st.columns(4)
-    for col,(n,v) in zip(c,[(aa,f"{s['a']['annual_return']:.1%}"),(ab,f"{s['b']['annual_return']:.1%}"),("相關性",f"{corr:.2f}"),("分散分數",f"{ds}/100")]): col.metric(n,v)
+    for col,(n,v) in zip(c,[(asset_label(aa),f"{s['a']['annual_return']:.1%}"),(asset_label(ab),f"{s['b']['annual_return']:.1%}"),("相關性",f"{corr:.2f}"),("分散分數",f"{ds}/100")]): col.metric(n,v)
     t1,t2,t3=st.tabs(["📈 成長","🛡️ 風險","🔗 關係"])
     with t1:
-        chart=growth[["date","A","B"]].rename(columns={"A":aa,"B":ab}).set_index("date"); st.line_chart(chart)
+        chart=growth[["date","A","B"]].rename(columns={"A":asset_label(aa),"B":asset_label(ab)}).set_index("date"); st.line_chart(chart)
     with t2:
-        st.dataframe([{"資產":aa,**s["a"]},{"資產":ab,**s["b"]}],use_container_width=True,hide_index=True)
+        st.dataframe([{"資產":asset_label(aa),**s["a"]},{"資產":asset_label(ab),**s["b"]}],use_container_width=True,hide_index=True)
     with t3:
         st.line_chart(roll.set_index("date")[["rolling_corr"]]); st.caption(f"{dl}｜{ds}/100")
     st.caption("跨資產統計使用共同日期。Crypto 週末資訊不會直接與美股休市日比較。")
@@ -291,7 +315,7 @@ elif page=="🌎 市場比較":
 else:
     with st.sidebar:
         st.header("🧪 策略設定" if page=="🧪 策略研究" else "🔥 挑戰設定")
-        symbol=st.selectbox("Crypto",["BTC/USDT","ETH/USDT","SOL/USDT"])
+        symbol=st.selectbox("加密貨幣",["BTC/USDT","ETH/USDT","SOL/USDT"],format_func=asset_label)
         timeframe=st.selectbox("週期",["1h","4h","1d"])
         years=st.select_slider("歷史",[1,2,3,5],value=3,format_func=lambda x:f"{x}年")
         strategy=st.selectbox("策略",list(STRATEGIES),format_func=lambda x:ZH[x])
@@ -332,4 +356,4 @@ else:
             with tab: st.dataframe(data,use_container_width=True,hide_index=True)
 
 st.divider()
-st.caption("Project Real Big Money v0.9.9 Region Analysis + TRF｜研究用途，不構成投資建議；PASS 不代表應投入真實資金。")
+st.caption("Project Real Big Money v0.9.10 Bilingual News and Assets｜研究用途，不構成投資建議；PASS 不代表應投入真實資金。")
