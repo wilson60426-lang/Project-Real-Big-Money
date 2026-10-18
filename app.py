@@ -19,6 +19,7 @@ from charts.workbench import make_chart
 from charts.region_analysis import explain_region
 from news.free_feed import fetch_news
 from news.event_link import relevant_news, event_reactions
+from news.company_feed import fetch_company_news
 from news.translation import translate_headline
 from news.research_assistant import analyze_headline, lookup_terms
 from localization.assets import asset_label, market_label
@@ -289,10 +290,10 @@ elif page=="🧾 美股財報研究室":
             st.caption("新聞來自免費 RSS，僅顯示近期標題；可能與上述歷史財報公告不是同一事件。不能因為標題接近就斷言股價由它造成。")
             if st.checkbox("取得這家公司的近期新聞（免費來源）",value=False,key="earnings_news_enabled"):
                 @st.cache_data(ttl=120,show_spinner=False)
-                def cached_earnings_news():
-                    return fetch_news("美股",60)
-                with st.spinner("正在搜尋近期公開新聞標題…"):
-                    recent_news,recent_errors=cached_earnings_news()
+                def cached_earnings_news(ticker):
+                    return fetch_company_news(ticker,limit=24)
+                with st.spinner("正在搜尋公司相關的公開 RSS 標題…"):
+                    recent_news,recent_errors=cached_earnings_news(symbol)
                 relevant=relevant_news(recent_news,symbol)
                 if recent_errors:
                     st.caption("部分新聞來源無法讀取："+ "、".join(recent_errors))
