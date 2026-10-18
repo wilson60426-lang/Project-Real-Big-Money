@@ -3,6 +3,8 @@ from config.settings import EXCHANGE, FEE_RATE
 from data.history import fetch_history
 from data.providers import get_asset, align_returns, CRYPTO, EQUITIES
 from data.fundamentals import ALLOWED_US_STOCKS, fetch_us_financials, explain_report
+from analytics.earnings_reactions import fetch_us_daily_prices, align_earnings_reactions, reaction_commentary
+from charts.earnings_workbench import make_earnings_chart
 from analytics.cross_asset import annualized_stats, rolling_correlation, normalized_growth, diversification_score
 from indicators.basic import add_indicators
 from strategies.strategy_library import STRATEGIES
@@ -29,7 +31,7 @@ st.markdown("""<style>
 div[data-testid="stExpander"]{border-radius:14px}
 </style>""",unsafe_allow_html=True)
 st.title("💰 Project Real Big Money")
-st.caption("v0.9.12 美股財報研究室｜營收、EPS、毛利率與預期比較｜免費市場情報研究")
+st.caption("v0.9.13 美股財報 × 新聞 × K 線｜公告事件研究｜免費市場情報研究")
 
 ZH={"SMA Cross":"均線交叉策略","RSI Reversion":"RSI 超賣反彈策略","Trend + RSI":"趨勢＋RSI 策略"}
 @st.cache_data(ttl=86400,show_spinner=False)
@@ -239,6 +241,76 @@ elif page=="🧾 美股財報研究室":
             st.markdown("#### ③ 看懂數字：不只看成長，也看不足的證據")
             for line in explain_report(report):
                 st.write("• "+line)
+            st.markdown("#### ④ 財報公告 × 美股 K 線：價格當時如何變化？")
+            st.caption("時間對應使用 Yahoo Finance 所提供的 EPS 公告時間，轉換為美國東部時間（含夏令時間）。股價為未經還原的日 K 收盤資料；不把財報季度期末當成公告日。")
+            @st.cache_data(ttl=3600,show_spinner=False)
+            def cached_earnings_prices(ticker):
+                return fetch_us_daily_prices(ticker)
+            try:
+                with st.spinner("正在比對公告時間與美股已完成交易日…"):
+                    prices=cached_earnings_prices(symbol)
+                    observations=align_earnings_reactions(prices,eps)
+                if prices.empty:
+                    st.warning("目前沒有可用的美股日 K；不計算公告前後漲跌。")
+                else:
+                    price_fig,mark_count=make_earnings_chart(prices,eps,asset_label(symbol))
+                    if price_fig is not None:
+                        st.plotly_chart(price_fig,use_container_width=True)
+                        st.caption(f"圖上有 {mark_count} 個可定位到已下載交易日的 EPS 公告標記。沒有菱形標記不代表沒有財報，可能是時間戳或 K 線範圍不足。")
+                if observations.empty:
+                    st.info("沒有可比較的已公布 EPS 公告事件，無法建立事件前後行情對照。")
+                else:
+                    output=observations.rename(columns={
+                        "announcement_date":"供應商公告時間",
+                        "release_et":"美東時間（若可判定）",
+                        "timing":"盤前／盤後分類",
+                        "baseline_date":"對照起始收盤日",
+                        "reaction_date":"對照結束收盤日",
+                        "baseline_close":"起始收盤價",
+                        "reaction_close":"結束收盤價",
+                        "close_to_close_pct":"收盤價變化（%）",
+                        "status":"計算狀態",
+                        "explanation":"資料不足與限制",
+                    })
+                    st.dataframe(output,use_container_width=True,hide_index=True)
+                    event_index=st.selectbox("想查看哪一筆公告的白話解釋？",range(len(observations)),
+                        format_func=lambda index:str(observations.iloc[index]["announcement_date"])[:19]+"｜"+str(observations.iloc[index]["timing"]),key="event_reaction_selected")
+                    detail=observations.iloc[event_index]
+                    if detail["status"]=="可觀察（非因果）":
+                        st.info(reaction_commentary(detail))
+                    else:
+                        st.warning(reaction_commentary(detail))
+                st.warning("⚠️ 收盤價前後變動不等於財報造成的超額報酬。本版沒有扣除市場同期表現，也未取得公告前經時間戳驗證的分析師預期或可靠的盤前／盤後逐筆行情。盤中公告、時間不明、未收盤日 K 將拒絕計算。")
+            except Exception as price_error:
+                st.warning("財報可繼續查看，但目前無法取得股價事件研究資料。")
+                with st.expander("查看股價資料錯誤（進階使用者）"):
+                    st.code(str(price_error))
+            st.markdown("#### ⑤ 近期新聞：此公司的市場消息")
+            st.caption("新聞來自免費 RSS，僅顯示近期標題；可能與上述歷史財報公告不是同一事件。不能因為標題接近就斷言股價由它造成。")
+            if st.checkbox("取得這家公司的近期新聞（免費來源）",value=False,key="earnings_news_enabled"):
+                @st.cache_data(ttl=120,show_spinner=False)
+                def cached_earnings_news():
+                    return fetch_news("美股",60)
+                with st.spinner("正在搜尋近期公開新聞標題…"):
+                    recent_news,recent_errors=cached_earnings_news()
+                relevant=relevant_news(recent_news,symbol)
+                if recent_errors:
+                    st.caption("部分新聞來源無法讀取："+ "、".join(recent_errors))
+                if not relevant:
+                    st.info("近期免費新聞標題沒有直接命中這家公司。這不等於該公司沒有其他相關新聞。")
+                else:
+                    for item in relevant[:8]:
+                        st.write(item["title"])
+                        published=item.get("published")
+                        when=published.strftime("%Y-%m-%d %H:%M UTC") if published else "來源未提供時間"
+                        st.caption(item["source"]+"｜"+when)
+                        st.link_button("閱讀此則原文 ↗",item["url"])
+                    selected=st.selectbox("挑選一則做繁體中文研究解讀",range(min(8,len(relevant))),
+                        format_func=lambda i:relevant[i]["title"][:120],key="earnings_news_selected")
+                    chosen=relevant[selected]
+                    st.markdown("##### 🔎 這則新聞可能涉及哪些財報與市場因素？")
+                    show_news_research(chosen["title"],source=chosen["source"],
+                        published=chosen["published"],url=chosen["url"],translate=False)
             if report["notes"]:
                 st.markdown("#### ⚠️ 資料取得限制")
                 for note in report["notes"]:
@@ -529,4 +601,4 @@ else:
             with tab: st.dataframe(data,use_container_width=True,hide_index=True)
 
 st.divider()
-st.caption("Project Real Big Money v0.9.12 Earnings and Fundamentals｜研究用途，不構成投資建議；PASS 不代表應投入真實資金。")
+st.caption("Project Real Big Money v0.9.13 Earnings-News-Candles｜研究用途，不構成投資建議；PASS 不代表應投入真實資金。")
