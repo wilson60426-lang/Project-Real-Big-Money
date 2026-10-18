@@ -2,6 +2,7 @@ import streamlit as st
 from config.settings import EXCHANGE, FEE_RATE
 from data.history import fetch_history
 from data.providers import get_asset, align_returns, CRYPTO, EQUITIES
+from data.fundamentals import ALLOWED_US_STOCKS, fetch_us_financials, explain_report
 from analytics.cross_asset import annualized_stats, rolling_correlation, normalized_growth, diversification_score
 from indicators.basic import add_indicators
 from strategies.strategy_library import STRATEGIES
@@ -28,7 +29,7 @@ st.markdown("""<style>
 div[data-testid="stExpander"]{border-radius:14px}
 </style>""",unsafe_allow_html=True)
 st.title("💰 Project Real Big Money")
-st.caption("v0.9.11 繁中金融研究助手｜術語解釋與事件情境分析｜免費市場情報研究")
+st.caption("v0.9.12 美股財報研究室｜營收、EPS、毛利率與預期比較｜免費市場情報研究")
 
 ZH={"SMA Cross":"均線交叉策略","RSI Reversion":"RSI 超賣反彈策略","Trend + RSI":"趨勢＋RSI 策略"}
 @st.cache_data(ttl=86400,show_spinner=False)
@@ -78,7 +79,7 @@ def show_news_research(headline,source="使用者輸入",published=None,url=None
             st.write("• "+caution)
         st.write("**技術方式：** 使用本機關鍵字規則產生研究問題，不使用付費 AI 模型；不是全文事實查核或即時行情驗證。")
 
-page=st.segmented_control("你今天想做什麼？",["📈 K 線研究室","📰 全球金融快報","📚 金融研究助手","🌎 市場比較","🧪 策略研究","🔥 挑戰策略","🧠 訊號可信度","🔔 價格提醒"],default="📈 K 線研究室")
+page=st.segmented_control("你今天想做什麼？",["📈 K 線研究室","📰 全球金融快報","📚 金融研究助手","🧾 美股財報研究室","🌎 市場比較","🧪 策略研究","🔥 挑戰策略","🧠 訊號可信度","🔔 價格提醒"],default="📈 K 線研究室")
 st.divider()
 
 if page=="📈 K 線研究室":
@@ -179,6 +180,77 @@ if page=="📈 K 線研究室":
         except Exception as e:
             st.error("K 線載入失敗，可能是行情服務暫時無回應。")
             with st.expander("進階錯誤資訊"): st.code(str(e))
+
+
+elif page=="🧾 美股財報研究室":
+    st.header("🧾 美股財報研究室｜用實際數字說明公司經營")
+    st.info("營收、毛利率和 EPS 都來自可取得的財報資料；EPS 市場預期只會在資料提供者提供可比數字時顯示。未提供就寫明缺漏，絕不自行猜測。")
+    symbol=st.selectbox("① 選擇美國上市公司",ALLOWED_US_STOCKS,format_func=asset_label,key="fundamentals_symbol")
+    st.caption("目前先支援部分美國上市公司；ETF、Crypto、台股尚未納入這個財報頁面。")
+    @st.cache_data(ttl=3600,show_spinner=False)
+    def cached_fundamentals(ticker):
+        return fetch_us_financials(ticker)
+    if st.button("🔄 重新取得財報資料",help="清除一小時快取，重新向資料提供者請求。"):
+        cached_fundamentals.clear()
+    if st.toggle("📊 載入營收、EPS、毛利率與市場預期",value=False,key="load_financials"):
+        try:
+            with st.spinner("正在讀取季度財報與 EPS 公布紀錄，可能需要一些時間…"):
+                report=cached_fundamentals(symbol)
+            currency=report.get("currency") or "未核實"
+            st.caption("資料來源："+report["source"]+"｜取得時間："+str(report["retrieved_at"])+"｜財報貨幣："+currency+"｜快取最長 1 小時。")
+            st.markdown("#### ① 財務數字：以會計季度期末分類")
+            quarterly=report["quarterly"]
+            if quarterly.empty:
+                st.warning("本次沒有可用的季度損益表；不顯示虛構的營收或獲利數字。")
+            else:
+                amounts=("revenue","gross_profit","operating_income","net_income")
+                table=quarterly.copy()
+                for col in amounts:
+                    table[col]=table[col]/1_000_000
+                table=table.rename(columns={
+                    "period_end":"會計季度期末",
+                    "revenue":"營收（百萬）",
+                    "gross_profit":"毛利（百萬）",
+                    "gross_margin_pct":"毛利率（%）",
+                    "operating_income":"營業利益（百萬）",
+                    "net_income":"淨利（百萬）",
+                    "statement_eps":"財報每股盈餘",
+                    "revenue_yoy_pct":"營收年增率（%）",
+                })
+                st.dataframe(table,use_container_width=True,hide_index=True)
+                st.caption("金額以百萬為單位；幣別："+currency+"。年增率僅在可找到去年同期季度時才計算。『財報每股盈餘』與下方 EPS 公布紀錄可能採用不同調整口徑。")
+                with st.expander("🔬 為什麼不能直接用毛利率判定股價？"):
+                    st.write("毛利率只能反映營收扣除銷貨成本的結果；營業費用、稅費、未來財測、估值與市場原本期待都可能改變股價反應。")
+            st.markdown("#### ② EPS 實際值 vs. 市場預期值")
+            eps=report["eps_events"]
+            if eps.empty:
+                st.warning("目前無法取得可用的 EPS 公布及預期紀錄，因此無法判斷是否超出市場預期。")
+            else:
+                eps_table=eps.rename(columns={
+                    "announcement_date":"財報公告時間（含時區）",
+                    "eps_estimate":"EPS 市場預期",
+                    "eps_reported":"EPS 已公布值",
+                    "eps_surprise_pct":"實際相對預期差距（%）",
+                    "state":"資料狀態",
+                })
+                st.dataframe(eps_table,use_container_width=True,hide_index=True)
+                st.caption("只有同一筆公告紀錄同時具有 EPS 預期和已公布 EPS，且預期不為 0 時，才計算差距；預期值為負時以其絕對值作為分母。未來公告不視為已公布。")
+                st.warning("注意：公告日 ≠ 會計季度期末日；這兩張表不可依排序直接逐列對接。Yahoo Finance 的 EPS 公布口徑也可能與損益表 Diluted EPS 不同。")
+            st.markdown("#### ③ 看懂數字：不只看成長，也看不足的證據")
+            for line in explain_report(report):
+                st.write("• "+line)
+            if report["notes"]:
+                st.markdown("#### ⚠️ 資料取得限制")
+                for note in report["notes"]:
+                    st.write("• "+note)
+            st.markdown("#### 🔗 原始資料與查核")
+            st.link_button("Yahoo Finance 財報頁 ↗","https://finance.yahoo.com/quote/"+symbol+"/financials/")
+            st.link_button("SEC EDGAR 官方財報搜尋 ↗","https://www.sec.gov/edgar/search/")
+            st.caption("資料僅供研究。Yahoo Finance 不是 SEC 官方財報原文，數字可能延遲、重編或缺漏。財測與營收分析師共識目前尚未接入可靠來源，不會在頁面虛構。")
+        except Exception as e:
+            st.error("財報資料暫時無法載入；請稍後重試，或選擇其他美股。")
+            with st.expander("進階錯誤資訊"):
+                st.code(str(e))
 
 elif page=="📚 金融研究助手":
     st.header("📚 繁體中文金融研究助手")
@@ -457,4 +529,4 @@ else:
             with tab: st.dataframe(data,use_container_width=True,hide_index=True)
 
 st.divider()
-st.caption("Project Real Big Money v0.9.11 Financial News Research Assistant｜研究用途，不構成投資建議；PASS 不代表應投入真實資金。")
+st.caption("Project Real Big Money v0.9.12 Earnings and Fundamentals｜研究用途，不構成投資建議；PASS 不代表應投入真實資金。")
