@@ -123,3 +123,13 @@ def test_only_equities_supported_not_etfs_or_crypto():
 def test_no_forward_fill_or_guess_of_consensus():
     assert extract_eps_consensus(None).empty
     assert extract_quarterly_income(None).empty
+
+
+def test_future_dated_quarter_cannot_appear_as_actual():
+    frame=pd.DataFrame({
+        pd.Timestamp("2027-03-31"): [500e9,200e9],
+        pd.Timestamp("2026-06-30"): [120e9,48e9],
+    },index=["Total Revenue","Gross Profit"])
+    result=extract_quarterly_income(frame,as_of="2026-10-18T00:00:00Z")
+    assert len(result)==1
+    assert result.iloc[0]["period_end"]=="2026-06-30"
