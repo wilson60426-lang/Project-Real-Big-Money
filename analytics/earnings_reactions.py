@@ -85,7 +85,12 @@ def _event_phase(stamp, available_dates):
     local = stamp.tz_convert(NEW_YORK)
     day = local.date()
     if day not in available_dates:
-        return "非交易日公布", local, day
+        # Weekends are definitely closed. Weekday gaps may be exchange holidays,
+        # halts, or missing provider data: without a verified trading calendar
+        # they must NOT be treated as a proven non-trading-day release.
+        if day.weekday() >= 5:
+            return "非交易日公布", local, day
+        return "交易日資料缺漏／可能休市", local, day
     local_time = (local.hour, local.minute)
     if local_time < (9, 30):
         if local_time == (0, 0):
@@ -139,7 +144,7 @@ def align_earnings_reactions(prices, events, now=None):
         row["timing"] = phase
         if local is not None:
             row["release_et"] = local.isoformat()
-        if day is None or phase.startswith("可能") or phase.startswith("盤中") or phase == "時間無效":
+        if day is None or phase.startswith(("可能", "盤中", "交易日資料缺漏")) or phase == "時間無效":
             row["explanation"] = "事件時點不足以用日 K 隔離行情反應，請核對公司正式公告時間或使用經授權的盤中資料。"
             result.append(row)
             continue
