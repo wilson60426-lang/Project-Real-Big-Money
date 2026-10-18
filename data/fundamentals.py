@@ -109,7 +109,12 @@ def extract_eps_consensus(frame, max_events=12, as_of=None):
             when = pd.Timestamp(index)
             if pd.isna(when):
                 continue
-            when = when.tz_localize("UTC") if when.tzinfo is None else when.tz_convert("UTC")
+            # Important: never invent a UTC timezone for a naive Yahoo timestamp.
+            # Keep it naive, so the downstream US price-event matcher refuses
+            # to assign a premarket/afterhours reaction without a real zone.
+            unknown_timezone = when.tzinfo is None
+            if not unknown_timezone:
+                when = when.tz_convert("UTC")
         except (TypeError, ValueError, OverflowError):
             continue
         # The calendar can contain duplicate event rows (call, announcement).
@@ -119,8 +124,9 @@ def extract_eps_consensus(frame, max_events=12, as_of=None):
         seen.add(day)
         estimate = _number(row.get("EPS Estimate"))
         reported = _number(row.get("Reported EPS"))
-        # Do not call future/pending EPS a reported result.
-        if when > current:
+        # Do not call future/pending EPS a reported result. Unknown-timezone
+        # announcements dated today are conservatively treated as pending.
+        if (when.date() >= current.date() if unknown_timezone else when > current):
             reported = None
         surprise = (reported - estimate) / abs(estimate) * 100 if (
             estimate is not None and reported is not None and estimate != 0
