@@ -138,3 +138,12 @@ def test_plotting_chart_only_marks_earnings_dates_with_reported_eps():
     )
     assert blank_fig is not None
     assert count==0
+
+
+def test_missing_weekday_price_is_not_assumed_to_be_market_holiday():
+    bars=daily(["2026-07-29","2026-07-31"],[100,102])
+    event=align_earnings_reactions(
+        bars,eps_events("2026-07-30T21:00:00Z"),now=NOW
+    ).iloc[0]
+    assert event["status"]=="不可計算"
+    assert "交易日資料缺漏" in event["timing"]
