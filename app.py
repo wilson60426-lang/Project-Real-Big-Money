@@ -234,7 +234,7 @@ elif page=="🧾 美股財報研究室":
                     "state":"資料狀態",
                 })
                 st.dataframe(eps_table,use_container_width=True,hide_index=True)
-                st.caption("只有同一筆公告紀錄同時具有 EPS 預期和已公布 EPS，且預期不為 0 時，才計算差距；預期值為負時以其絕對值作為分母。未來公告不視為已公布。")
+                st.caption("只有同一筆公告紀錄同時具有 EPS 預期和已公布 EPS，且預期不為 0 時，才計算差距；預期值為負時以其絕對值作為分母。未來公告不視為已公布。供應商未證明 EPS Estimate 一定保留『公告前』歷史共識快照，請回查專業公告前預估資料。")
                 st.warning("注意：公告日 ≠ 會計季度期末日；這兩張表不可依排序直接逐列對接。Yahoo Finance 的 EPS 公布口徑也可能與損益表 Diluted EPS 不同。")
             st.markdown("#### ③ 看懂數字：不只看成長，也看不足的證據")
             for line in explain_report(report):
