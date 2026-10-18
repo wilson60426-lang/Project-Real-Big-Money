@@ -24,3 +24,15 @@ def test_engine_does_not_make_network_calls():
     assert "urllib" not in src
     assert "requests" not in src
     assert "openai" not in src.lower()
+
+
+def test_earnings_kline_research_is_wired_in_and_parses():
+    for path in ("analytics/earnings_reactions.py","charts/earnings_workbench.py",
+                 "data/fundamentals.py","tests/test_earnings_reactions.py"):
+        ast.parse((ROOT/path).read_text(encoding="utf-8"),filename=path)
+    app=(ROOT/"app.py").read_text(encoding="utf-8")
+    assert 'elif page=="🧾 美股財報研究室":' in app
+    assert 'align_earnings_reactions(prices,eps)' in app
+    assert 'make_earnings_chart(prices,eps,asset_label(symbol))' in app
+    assert 'relevant_news(recent_news,symbol)' in app
+    assert "新聞來自免費" not in app or "近期" in app
