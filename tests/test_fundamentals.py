@@ -133,3 +133,22 @@ def test_future_dated_quarter_cannot_appear_as_actual():
     result=extract_quarterly_income(frame,as_of="2026-10-18T00:00:00Z")
     assert len(result)==1
     assert result.iloc[0]["period_end"]=="2026-06-30"
+
+
+def test_naive_earnings_timestamp_keeps_unknown_timezone():
+    frame=pd.DataFrame({
+        "EPS Estimate":[1.0],
+        "Reported EPS":[1.20],
+    },index=pd.DatetimeIndex(["2026-07-30 17:00:00"]))
+    result=extract_eps_consensus(frame,as_of="2026-08-01T00:00:00Z")
+    assert result.iloc[0]["announcement_date"]=="2026-07-30T17:00:00"
+    from analytics.earnings_reactions import align_earnings_reactions
+    prices=pd.DataFrame({
+        "timestamp":pd.to_datetime(["2026-07-29","2026-07-30","2026-07-31"]),
+        "open":[99,101,103],"high":[102,104,110],
+        "low":[98,100,102],"close":[100,102,108],
+        "volume":[1000,1200,1500],
+    })
+    observation=align_earnings_reactions(prices,result,now="2026-08-01T00:00:00Z")
+    assert observation.iloc[0]["status"]=="不可計算"
+    assert "時區" in observation.iloc[0]["explanation"]
