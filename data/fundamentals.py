@@ -51,17 +51,20 @@ def _date(value):
         return None
 
 
-def extract_quarterly_income(frame, max_quarters=8):
+def extract_quarterly_income(frame, max_quarters=8, as_of=None):
     """Normalize quarterly statement columns into chronological observation rows."""
     columns = ["period_end", "revenue", "gross_profit", "gross_margin_pct",
                "operating_income", "net_income", "statement_eps", "revenue_yoy_pct"]
     if not isinstance(frame, pd.DataFrame) or frame.empty:
         return pd.DataFrame(columns=columns)
+    cutoff = pd.Timestamp.now(tz="UTC") if as_of is None else pd.Timestamp(as_of)
+    cutoff = cutoff.tz_localize("UTC") if cutoff.tzinfo is None else cutoff.tz_convert("UTC")
     observations = []
     seen = set()
     for column in frame.columns:
         period = _date(column)
-        if period is None or period in seen:
+        if period is None or period in seen or pd.Timestamp(period).tz_localize("UTC") > cutoff:
+            # Financial statement future-dated columns must never count as announced results.
             continue
         seen.add(period)
         values = frame[column]
@@ -155,7 +158,7 @@ def fetch_us_financials(symbol, ticker_factory=None, now=None):
     }
     ticker = ticker_factory(symbol)
     try:
-        result["quarterly"] = extract_quarterly_income(ticker.quarterly_income_stmt)
+        result["quarterly"] = extract_quarterly_income(ticker.quarterly_income_stmt, as_of=when)
         if result["quarterly"].empty:
             result["notes"].append("季度損益表缺漏，不能推斷營收、獲利或毛利率。")
     except Exception:
@@ -208,9 +211,9 @@ def explain_report(report):
         surprise = float(last["eps_surprise_pct"])
         when = str(last["announcement_date"])[:10]
         label = "高於" if surprise > 0 else "低於" if surprise < 0 else "符合"
-        messages.append(f"{when} 的 EPS 公布值{label}當時的 Yahoo Finance 預期值，差距約 {surprise:+.1f}%；不等於財報公布日的股價漲跌。")
+        messages.append(f"{when} 的 EPS 公布值{label}供應商所列預估值，差距約 {surprise:+.1f}%；供應商未證明預估值是公告前的歷史快照，也不等於公告日股價漲跌。")
     else:
         messages.append("目前沒有可比的 EPS 實際值與市場預期值；不判斷是否超出預期。")
-    messages.append("Yahoo Finance 的『Reported EPS』可能採用與損益表每股盈餘不同的調整口徑，兩者不可直接混用。")
+    messages.append("Yahoo Finance 的『Reported EPS』可能採用與損益表每股盈餘不同的調整口徑，兩者不可直接混用；供應商的 EPS Estimate 也未經公告前時間戳驗證。")
     messages.append("公司未來財測尚未從官方文件逐筆驗證，因此本頁不顯示推測的財測數字。")
     return messages
