@@ -36,3 +36,15 @@ def test_earnings_kline_research_is_wired_in_and_parses():
     assert 'make_earnings_chart(prices,eps,asset_label(symbol))' in app
     assert 'relevant_news(recent_news,symbol)' in app
     assert "新聞來自免費" not in app or "近期" in app
+
+
+def test_spy_context_is_connected_and_parses():
+    ast.parse((ROOT/"analytics/market_context.py").read_text(encoding="utf-8"),
+              filename="analytics/market_context.py")
+    ast.parse((ROOT/"tests/test_market_context.py").read_text(encoding="utf-8"),
+              filename="tests/test_market_context.py")
+    app=(ROOT/"app.py").read_text(encoding="utf-8")
+    assert "v0.9.14" in app
+    assert "fetch_spy_daily_prices()" in app
+    assert "with_spy_context(observations,spy_prices)" in app
+    assert "market_context_commentary(detail)" in app
