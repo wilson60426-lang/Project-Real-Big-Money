@@ -4,6 +4,7 @@ from data.history import fetch_history
 from data.providers import get_asset, align_returns, CRYPTO, EQUITIES
 from data.fundamentals import ALLOWED_US_STOCKS, fetch_us_financials, explain_report
 from analytics.earnings_reactions import fetch_us_daily_prices, align_earnings_reactions, reaction_commentary
+from analytics.market_context import fetch_spy_daily_prices, with_spy_context, market_context_commentary
 from charts.earnings_workbench import make_earnings_chart
 from analytics.cross_asset import annualized_stats, rolling_correlation, normalized_growth, diversification_score
 from indicators.basic import add_indicators
@@ -32,7 +33,7 @@ st.markdown("""<style>
 div[data-testid="stExpander"]{border-radius:14px}
 </style>""",unsafe_allow_html=True)
 st.title("💰 Project Real Big Money")
-st.caption("v0.9.13 美股財報 × 新聞 × K 線｜公告事件研究｜免費市場情報研究")
+st.caption("v0.9.14 財報事件研究｜同期 SPY 市場比較｜免費市場情報研究")
 
 ZH={"SMA Cross":"均線交叉策略","RSI Reversion":"RSI 超賣反彈策略","Trend + RSI":"趨勢＋RSI 策略"}
 @st.cache_data(ttl=86400,show_spinner=False)
@@ -261,6 +262,17 @@ elif page=="🧾 美股財報研究室":
                 if observations.empty:
                     st.info("沒有可比較的已公布 EPS 公告事件，無法建立事件前後行情對照。")
                 else:
+                    st.markdown("##### 📊 同期 SPY 大盤比較（不代表財報造成的超額報酬）")
+                    st.caption("SPY 是標普 500 ETF 的市場參考值；只有個股與 SPY 完全相同的起訖交易日都已完成，才會計算百分點差。無資料時保留空白。")
+                    @st.cache_data(ttl=3600,show_spinner=False)
+                    def cached_spy_benchmark():
+                        return fetch_spy_daily_prices()
+                    try:
+                        spy_prices=cached_spy_benchmark()
+                    except Exception:
+                        spy_prices=None
+                        st.warning("SPY 參考行情暫時無法取得；以下仍可檢視原始個股事件分析。")
+                    observations=with_spy_context(observations,spy_prices)
                     output=observations.rename(columns={
                         "announcement_date":"供應商公告時間",
                         "release_et":"美東時間（若可判定）",
@@ -272,6 +284,12 @@ elif page=="🧾 美股財報研究室":
                         "close_to_close_pct":"收盤價變化（%）",
                         "status":"計算狀態",
                         "explanation":"資料不足與限制",
+                        "spy_baseline_close":"SPY 基準收盤價",
+                        "spy_reaction_close":"SPY 對照收盤價",
+                        "spy_close_to_close_pct":"同期 SPY 漲跌（%）",
+                        "relative_to_spy_pp":"個股減 SPY（百分點）",
+                        "market_context_status":"同期大盤比較狀態",
+                        "market_context_note":"同期大盤比較限制",
                     })
                     st.dataframe(output,use_container_width=True,hide_index=True)
                     event_index=st.selectbox("想查看哪一筆公告的白話解釋？",range(len(observations)),
@@ -279,8 +297,10 @@ elif page=="🧾 美股財報研究室":
                     detail=observations.iloc[event_index]
                     if detail["status"]=="可觀察（非因果）":
                         st.info(reaction_commentary(detail))
+                        st.info(market_context_commentary(detail))
                     else:
                         st.warning(reaction_commentary(detail))
+                        st.caption(market_context_commentary(detail))
                 st.warning("⚠️ 收盤價前後變動不等於財報造成的超額報酬。本版沒有扣除市場同期表現，也未取得公告前經時間戳驗證的分析師預期或可靠的盤前／盤後逐筆行情。盤中公告、時間不明、未收盤日 K 將拒絕計算。")
             except Exception as price_error:
                 st.warning("財報可繼續查看，但目前無法取得股價事件研究資料。")
@@ -602,4 +622,4 @@ else:
             with tab: st.dataframe(data,use_container_width=True,hide_index=True)
 
 st.divider()
-st.caption("Project Real Big Money v0.9.13 Earnings-News-Candles｜研究用途，不構成投資建議；PASS 不代表應投入真實資金。")
+st.caption("Project Real Big Money v0.9.14 SPY Benchmark Context｜研究用途，不構成投資建議；PASS 不代表應投入真實資金。")
